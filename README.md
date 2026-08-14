@@ -13,10 +13,21 @@ aftman install          # instala rojo + selene nas versões do aftman.toml
 
 ## Rodar
 
+São **dois places**, cada um com seu project file e sua árvore de fontes. Não existe
+`default.project.json` — todo comando exige o project file explícito.
+
 ```bash
-rojo serve              # porta 34874 — conecte pelo plugin Rojo no Studio
-rojo build -o build.rbxl
-selene .                # lint estático de Luau
+rojo serve lobby.project.json   # porta 34874
+rojo serve match.project.json   # porta 34875
+```
+
+Os dois podem servir ao mesmo tempo (portas distintas): abra uma instância do Studio
+por place e conecte cada uma na porta correspondente pelo plugin Rojo.
+
+```bash
+rojo build lobby.project.json -o lobby.rbxl
+rojo build match.project.json -o match.rbxl
+selene .                        # lint estático de Luau — varre as duas árvores
 ```
 
 ## Estrutura
@@ -25,17 +36,27 @@ selene .                # lint estático de Luau
 .
 ├── .github/workflows/ci.yml   # lint (selene) + secret scan (gitleaks) + pin-check
 ├── aftman.toml                # rojo 7.7.0-rc.1 · selene 0.27.1
-├── default.project.json       # mapa filesystem -> DataModel
+├── lobby.project.json         # place Lobby -> porta 34874
+├── match.project.json         # place Match -> porta 34875
 ├── selene.toml                # std roblox; global_usage = deny
-└── src/
-    ├── client/                # -> StarterPlayer.StarterPlayerScripts
-    │   ├── ClientLoader.client.lua
-    │   └── Source/            # controllers (ModuleScript com Init/Start)
-    ├── server/                # -> ServerScriptService
-    │   ├── Main.server.lua
-    │   └── Source/            # services (ModuleScript com Init/Start)
-    └── shared/                # -> ReplicatedStorage.Shared
+├── src-lobby/
+│   ├── client/                # -> StarterPlayer.StarterPlayerScripts
+│   │   ├── ClientLoader.client.lua
+│   │   └── Source/            # controllers (ModuleScript com Init/Start)
+│   ├── server/                # -> ServerScriptService
+│   │   ├── Main.server.lua
+│   │   └── Source/            # services (ModuleScript com Init/Start)
+│   └── shared/                # -> ReplicatedStorage.Shared
+└── src-match/                 # mesma forma, place independente
+    ├── client/
+    ├── server/
+    └── shared/
 ```
+
+Cada place é um DataModel próprio, então cada um carrega o **seu** boot — os loaders
+estão duplicados de propósito, não são código compartilhado. `src-lobby/shared` e
+`src-match/shared` também são independentes: o que os dois places precisam enxergar
+igual tem que ser copiado ou movido para um pacote, nunca assumido como comum.
 
 ## Contrato dos módulos
 
@@ -52,4 +73,5 @@ Falha em qualquer um é isolada por `pcall` e derruba o atributo
 
 - Branch principal: `main`
 - `.rbxl`/`.rbxm` são **artefato**, nunca fonte — o place publicado é a fonte de GUI/Workspace.
-- `servePort` é 34874 para não colidir com outros projetos Rojo servindo em paralelo.
+- `servePort` 34874/34875 para não colidir entre si nem com outros projetos Rojo
+  servindo em paralelo.

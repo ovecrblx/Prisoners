@@ -1,17 +1,17 @@
 {
-  "name": "Prisoners",
-  "servePort": 34874,
+  "name": "Prisoners-Match",
+  "servePort": 34875,
   "tree": {
     "$className": "DataModel",
 
     "ServerScriptService": {
-      "$path": "src/server"
+      "$path": "src-match/server"
     },
 
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
-        "$path": "src/client"
+        "$path": "src-match/client"
       }
     },
 
@@ -19,7 +19,7 @@
       "$className": "ReplicatedStorage",
       "$ignoreUnknownInstances": true,
       "Shared": {
-        "$path": "src/shared"
+        "$path": "src-match/shared"
       }
     }
   }

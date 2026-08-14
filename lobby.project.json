@@ -1,0 +1,26 @@
+{
+  "name": "Prisoners-Lobby",
+  "servePort": 34874,
+  "tree": {
+    "$className": "DataModel",
+
+    "ServerScriptService": {
+      "$path": "src-lobby/server"
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$path": "src-lobby/client"
+      }
+    },
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "$ignoreUnknownInstances": true,
+      "Shared": {
+        "$path": "src-lobby/shared"
+      }
+    }
+  }
+}
