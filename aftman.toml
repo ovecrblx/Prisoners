@@ -1,0 +1,9 @@
+# This file lists tools managed by Aftman, a cross-platform toolchain manager.
+# For more information, see https://github.com/LPGhatguy/aftman
+
+# Versões FIXAS (nunca faixa ^ ~ > <) p/ build determinístico — o job `pin-check`
+# do CI reprova qualquer faixa. Confira a release ao atualizar.
+[tools]
+rojo = "rojo-rbx/rojo@7.7.0-rc.1"
+# Lint estático de Luau (equivalente Roblox de Bandit/Semgrep).
+selene = "Kampfkarren/selene@0.27.1"

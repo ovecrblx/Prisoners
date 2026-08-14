@@ -1,3 +1,15 @@
+# Roblox / Rojo
+# Builds do Rojo (artefato, nunca fonte). O place publicado é a fonte de GUI/Workspace,
+# não estes arquivos — versionar um .rbxl aqui vira conflito binário garantido.
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+sourcemap.json
+
+# Claude Code
+.claude/settings.local.json
+
 # OS
 Thumbs.db
 ehthumbs.db

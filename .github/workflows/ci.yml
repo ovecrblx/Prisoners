@@ -1,0 +1,69 @@
+name: CI
+
+# Roda em todo push/PR p/ main: lint estático de Luau + secret scan.
+# Cobre os itens de Segurança: "Lint de security", "Secret scan" e (via versões
+# FIXAS abaixo) "Pinar versão / scan de lib exploit".
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Princípio do menor privilégio: o token do workflow só lê o repo.
+permissions:
+  contents: read
+
+# NOTA DE SUPPLY CHAIN: as actions abaixo estão pinadas por TAG de major version.
+# Para o hardening máximo (recomendado), troque cada `@vN` pelo SHA do commit
+# exato (ex.: `actions/checkout@<sha>`) — uma tag pode ser re-apontada, um SHA não.
+jobs:
+  lint:
+    name: Luau lint (selene)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # selene instalado direto da release (versão FIXA = build determinístico).
+      # A variante "full" (não a "-light") já inclui a std do Roblox usada no selene.toml.
+      - name: Install selene
+        run: |
+          SELENE_VERSION=0.27.1
+          curl -fsSL "https://github.com/Kampfkarren/selene/releases/download/${SELENE_VERSION}/selene-${SELENE_VERSION}-linux.zip" -o selene.zip
+          unzip -o selene.zip
+          chmod +x selene
+          ./selene --version
+
+      # --allow-warnings: só ERRO falha o CI. É o que o selene.toml já diz — shadowing e
+      # unused_variable estão como "warn" DE PROPÓSITO, global_usage como "deny". Sem esta
+      # flag o selene sai 1 em qualquer warning e o job reprova contra a própria config.
+      - name: Run selene
+        run: ./selene --allow-warnings .
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico completo: o gitleaks varre todos os commits
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  pin-check:
+    name: Dependency pin enforcement
+    runs-on: ubuntu-latest
+    # "Pinar versão" / supply chain: falha se alguma ferramenta aftman usar FAIXA
+    # (^ ~ > < =) em vez de versão exata (x.y.z). Versão móvel = build não-determinístico
+    # e janela p/ uma release maliciosa entrar sem revisão.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure aftman tools are pinned to exact versions
+        run: |
+          if grep -nE '@[[:space:]]*[\^~><=]' aftman.toml; then
+            echo "::error file=aftman.toml::Versão em FAIXA detectada — pine em x.y.z exato."
+            exit 1
+          fi
+          echo "OK: todas as ferramentas aftman estão pinadas em versão exata."

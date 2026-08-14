@@ -1,0 +1,14 @@
+# selene.toml — lint estático de Luau (equivalente Roblox de Bandit/Semgrep).
+# Roda local (`selene .`) e no CI (.github/workflows/ci.yml).
+# A std "roblox" ensina o selene sobre os globais do Roblox (game, workspace, task, etc.).
+std = "roblox"
+
+[rules]
+# Bugs/erros prováveis ficam como ERRO (falham o CI):
+#   - global_usage, multiple_statements, shadowing → pegam vazamento de global,
+#     statements coladas e sombra de variável (fontes comuns de bug sutil).
+global_usage = "deny"
+shadowing = "warn"
+unused_variable = "warn"
+# Ruído puramente estilístico relaxado p/ o lint focar em problemas reais:
+multiple_statements = "allow"
