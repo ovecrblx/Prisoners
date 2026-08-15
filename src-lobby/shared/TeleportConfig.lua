@@ -21,12 +21,43 @@ TeleportConfig.PayloadTtl = 300
 
 -- === PADS ======================================================================================
 -- Cada pad é uma "área": um Model em workspace.<PadsFolder> chamado <PadPrefix><i>.
--- Dentro dele, a parte de toque é a chamada <GatePartName>; não achando, cai na primeira
--- BasePart do Model (pad improvisado no Studio ainda funciona).
+--
+-- Estrutura real do place (o resto do Model é decoração — Union, Beams, Zone):
+--   Party_N/
+--     Model/
+--       gate           BasePart de toque
+--       spawn          onde os membros ficam em pé
+--       billboardPart/
+--         billboardGui/
+--           Frame/
+--             Players  TextButton "N/MAX"
+--             Timer    TextButton "Ns"
+--
+-- Os nomes são MINÚSCULOS e FindFirstChild é case-sensitive. "Gate" não acha "gate" e o
+-- serviço cairia no fallback "primeira BasePart", que em Party_1 é a Union decorativa —
+-- o Touched ficaria ligado na peça errada, em silêncio.
 TeleportConfig.PadsFolder = "Tp"
 TeleportConfig.PadPrefix = "Party_"
 TeleportConfig.PadCount = 3
-TeleportConfig.GatePartName = "Gate"
+
+-- Sub-Model que guarda as peças funcionais. "" = as peças estão direto no pad.
+TeleportConfig.PadInnerModel = "Model"
+TeleportConfig.GatePartName = "gate"
+
+-- Onde o jogador é posto ao entrar na party (fica visível em pé no pad — a party é física).
+TeleportConfig.SpawnPartName = "spawn"
+
+-- Para onde ele volta ao sair da party. Sem isto ele fica em pé no pad depois de sair, e pisar
+-- de novo no gate o readmite no mesmo instante.
+TeleportConfig.MainSpawnName = "SpawnLocation"
+TeleportConfig.MainSpawnOffset = 3
+
+-- Caminho do cartaz, a partir do sub-Model acima.
+TeleportConfig.BillboardPartName = "billboardPart"
+TeleportConfig.BillboardGuiName = "billboardGui"
+TeleportConfig.BillboardFrameName = "Frame"
+TeleportConfig.BillboardPlayersLabel = "Players"
+TeleportConfig.BillboardTimerLabel = "Timer"
 
 -- === LOTAÇÃO ===================================================================================
 TeleportConfig.MinPlayers = 1

@@ -24,9 +24,11 @@ local parties = {}
 local touchDebounce = {}
 local partyOfPlayer = {}
 local enabled = false
+local mainSpawn
 
 local ActionEvent
 local UpdateEvent
+local RemotesFolder
 
 -- === REMOTES ===================================================================================
 -- Criados via código, não à mão no Studio: instância esquecida no place vira erro de boot que
@@ -38,6 +40,8 @@ local function ensureRemotes()
 		remotes.Name = "Remotes"
 		remotes.Parent = ReplicatedStorage
 	end
+
+	RemotesFolder = remotes
 
 	ActionEvent = remotes:FindFirstChild("AreaTeleportAction")
 	if not ActionEvent then
@@ -55,32 +59,81 @@ local function ensureRemotes()
 end
 
 -- === PADS ======================================================================================
--- A parte de toque preferida é a de nome Config.GatePartName; sem ela, a primeira BasePart do
--- Model serve. Pad sem BasePart nenhuma é ignorado com aviso — melhor um pad morto do que o
--- serviço inteiro caindo no boot.
-local function findGate(model)
-	local named = model:FindFirstChild(Config.GatePartName)
-	if named and named:IsA("BasePart") then
-		return named
+-- As peças funcionais vivem num sub-Model (Config.PadInnerModel), não soltas no pad: o resto é
+-- decoração (Union, Beams, Zone). Buscar a partir do pad inteiro pegaria a Union primeiro.
+local function findInner(model)
+	if Config.PadInnerModel == "" then
+		return model
 	end
+	return model:FindFirstChild(Config.PadInnerModel)
+end
 
-	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			return descendant
-		end
+-- SEM fallback para "primeira BasePart". O pad tem várias (Union, Zone, spawn), e escolher a
+-- errada liga o Touched numa peça decorativa — falha silenciosa, o pior tipo. Nome não bateu,
+-- avisa e deixa o pad morto.
+local function findGate(inner)
+	local gate = inner and inner:FindFirstChild(Config.GatePartName)
+	if gate and gate:IsA("BasePart") then
+		return gate
 	end
-
 	return nil
+end
+
+-- Cartaz físico do pad. Cada campo é buscado com FindFirstChild e testado: indexação direta
+-- derrubaria o Init inteiro se um campo sumisse da GUI. Faltando um, só aquele campo não
+-- atualiza.
+local function findSign(inner)
+	local billboardPart = inner and inner:FindFirstChild(Config.BillboardPartName)
+	local gui = billboardPart and billboardPart:FindFirstChild(Config.BillboardGuiName)
+	local frame = gui and gui:FindFirstChild(Config.BillboardFrameName)
+	if not frame then
+		return nil
+	end
+
+	return {
+		players = frame:FindFirstChild(Config.BillboardPlayersLabel),
+		timer = frame:FindFirstChild(Config.BillboardTimerLabel),
+	}
+end
+
+-- Lotação e contagem no cartaz. Fora da contagem o Timer volta a "0s" — lotação e tempo já
+-- dizem o estado do pad, não há rótulo de status separado.
+local function updateSign(index)
+	local party = parties[index]
+	local sign = party.sign
+	if not sign then
+		return
+	end
+
+	if sign.players then
+		sign.players.Text = #party.members .. "/" .. Config.MaxPlayers
+	end
+
+	if sign.timer then
+		sign.timer.Text = (party.status == "teleporting") and (party.timer .. "s") or "0s"
+	end
 end
 
 local function broadcast(index, instruction)
 	local party = parties[index]
 	local count = #party.members
 
+	updateSign(index)
+
 	for _, member in ipairs(party.members) do
 		local role = (member == party.leader) and "Leader" or "Member"
 		UpdateEvent:FireClient(member, instruction, party.name, count, party.status, party.timer, role)
 	end
+end
+
+-- Devolve o jogador ao spawn principal. Sem isto ele continua em pé no pad depois de sair, e o
+-- próximo Touched do gate o readmite no mesmo instante — sair vira impossível.
+local function sendToMainSpawn(player)
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not (root and mainSpawn) then
+		return
+	end
+	root.CFrame = mainSpawn.CFrame + Vector3.new(0, Config.MainSpawnOffset, 0)
 end
 
 local function removeFromParty(player)
@@ -90,6 +143,9 @@ local function removeFromParty(player)
 	end
 
 	local party = parties[index]
+	local wasLeader = (party.leader == player)
+	local wasTeleporting = (party.status == "teleporting")
+
 	partyOfPlayer[player] = nil
 	player:SetAttribute("IsReady", nil)
 
@@ -101,21 +157,34 @@ local function removeFromParty(player)
 	end
 
 	UpdateEvent:FireClient(player, "Hide", party.name, 0, "waiting", 0, nil)
+	sendToMainSpawn(player)
 
-	if party.leader == player then
+	if wasLeader then
 		-- Líder saindo durante a contagem MATA a sequência: bumpar o seq faz a thread em voo
 		-- abortar no próximo yield, senão ela teleportaria o snapshot montado antes da saída.
-		if party.status == "teleporting" then
+		if wasTeleporting then
 			party.status = "waiting"
 			party.timer = 0
 			party.seq += 1
 			party.reservedCode = nil
 			party.reservedPrivateServerId = nil
+
+			-- Limpa o pronto de TODOS, não só de quem saiu: a contagem morreu junto com o líder,
+			-- e quem ficou marcado pronto entraria já pronto na PRÓXIMA contagem — que encurta
+			-- para ReadyCountdown assim que todos estão prontos. Na prática, um Play seguinte
+			-- teleportaria quase instantaneamente, sem ninguém ter confirmado nada.
+			for _, member in ipairs(party.members) do
+				member:SetAttribute("IsReady", nil)
+			end
 		end
 
 		party.leader = party.members[1]
 	end
 
+	-- NÃO reabrir o gate durante o colchão. Se o último a sair flipasse o status para "waiting",
+	-- o gate reabriria no meio da reciclagem, um jogador NOVO entraria no pad e o wipe o
+	-- apagaria — vira fantasma: em pé no pad, com painel aberto, fora de party.members. A thread
+	-- de reciclagem é a única dona da volta para "waiting".
 	if #party.members == 0 and party.status ~= "recycling" then
 		party.status = "waiting"
 		party.timer = 0
@@ -131,6 +200,24 @@ local function onGateTouched(index, hit)
 		return
 	end
 
+	-- Personagem morto não entra. Sem esta guarda, partes de um corpo caído/ragdoll roçando o
+	-- gate inscrevem o jogador — que reaparece no spawn logo depois, membro de uma party em que
+	-- nunca pisou conscientemente.
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		return
+	end
+
+	-- Debounce ANTES das outras checagens: Touched dispara dezenas de vezes por passo, e barrar
+	-- cedo evita repetir o trabalho todo. Timestamp em vez de flag + task.delay — a versão com
+	-- delay abre uma thread por toque, e numa tempestade de Touched isso é milhares de threads.
+	local now = os.clock()
+	local last = touchDebounce[player]
+	if last and (now - last) < Config.TouchDebounce then
+		return
+	end
+	touchDebounce[player] = now
+
 	-- Só "waiting" admite entrada. "teleporting" barra quem chega no meio da contagem (o
 	-- snapshot já foi prometido); "recycling" barra durante o colchão pós-teleporte.
 	local party = parties[index]
@@ -142,14 +229,6 @@ local function onGateTouched(index, hit)
 		return
 	end
 
-	if touchDebounce[player] then
-		return
-	end
-	touchDebounce[player] = true
-	task.delay(Config.TouchDebounce, function()
-		touchDebounce[player] = nil
-	end)
-
 	table.insert(party.members, player)
 	partyOfPlayer[player] = index
 
@@ -157,19 +236,38 @@ local function onGateTouched(index, hit)
 		party.leader = player
 	end
 
+	-- Posicionar vem DEPOIS de inscrever, e é tolerante a falta da peça. Se um erro aqui
+	-- abortasse a função, o jogador ficaria dentro de party.members com o cartaz e o painel
+	-- desatualizados (o broadcast abaixo nunca rodaria). Sem a peça `spawn` ele só não é puxado;
+	-- a party continua consistente.
+	local spawnPart = party.spawnPart
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if spawnPart and root then
+		root.CFrame = spawnPart.CFrame
+	end
+
 	broadcast(index, "Update")
 end
 
 -- Devolve a party a um estado jogável depois de uma sequência abortada.
-local function abortSequence(index)
+--
+-- `clearReady` distingue de quem foi a culpa:
+--   true  -> a party mudou (cancelou, caiu abaixo do mínimo, líder saiu). O pronto de cada um
+--            já não vale, porque a composição não é mais a mesma.
+--   false -> falhou a INFRAESTRUTURA (ReserveServer, MemoryStore, teleporte). A party continua
+--            igual e ninguém errou nada; zerar o pronto obrigaria todo mundo a reconfirmar por
+--            causa de uma instabilidade da Roblox. Mantém, e o líder tenta de novo direto.
+local function abortSequence(index, clearReady)
 	local party = parties[index]
 	party.status = "waiting"
 	party.timer = 0
 	party.reservedCode = nil
 	party.reservedPrivateServerId = nil
 
-	for _, member in ipairs(party.members) do
-		member:SetAttribute("IsReady", nil)
+	if clearReady then
+		for _, member in ipairs(party.members) do
+			member:SetAttribute("IsReady", nil)
+		end
 	end
 
 	broadcast(index, "Update")
@@ -185,8 +283,10 @@ local function recycle(index, mySeq)
 	broadcast(index, "Update")
 
 	task.delay(Config.RecycleWindow, function()
-		-- Superada durante o colchão: a sequência nova é dona do estado agora.
-		if party.seq ~= mySeq then
+		-- Exige seq E status. O seq sozinho não basta: a party pode ter voltado a "waiting" por
+		-- outro caminho dentro do colchão (o último membro saiu, por exemplo) e já ter recebido
+		-- um jogador novo — que este wipe apagaria. O wipe é o fim DESTE ciclo, não um reset cego.
+		if party.seq ~= mySeq or party.status ~= "recycling" then
 			return
 		end
 
@@ -299,8 +399,9 @@ local function startSequence(index)
 			return
 		end
 
+		-- A party mudou (cancelada, ou caiu abaixo do mínimo): pronto de todos deixa de valer.
 		if party.status ~= "teleporting" or #party.members < Config.MinPlayers then
-			abortSequence(index)
+			abortSequence(index, true)
 			return
 		end
 
@@ -320,9 +421,11 @@ local function startSequence(index)
 			and party.leader.Parent == Players
 			and #party.members >= Config.MinPlayers
 
+		-- Pode ser falha de reserva OU party desfeita; não dá para separar aqui, então trata como
+		-- mudança de composição (o caso mais perigoso de manter pronto obsoleto).
 		if not intact then
 			if party.seq == mySeq then
-				abortSequence(index)
+				abortSequence(index, true)
 			end
 			return
 		end
@@ -346,7 +449,7 @@ local function startSequence(index)
 
 		if not stable then
 			if party.seq == mySeq then
-				abortSequence(index)
+				abortSequence(index, false)
 			end
 			return
 		end
@@ -355,9 +458,11 @@ local function startSequence(index)
 			return party.seq == mySeq
 		end)
 
+		-- Teleporte falhou de vez: infraestrutura, não a party. Mantém o pronto para o líder poder
+		-- tentar de novo sem todo mundo reconfirmar.
 		if not teleported then
 			if party.seq == mySeq then
-				abortSequence(index)
+				abortSequence(index, false)
 			end
 			return
 		end
@@ -394,6 +499,32 @@ local function onAction(player, action)
 		if player == party.leader then
 			startSequence(index)
 		end
+	elseif action == "Cancel" then
+		-- Líder cancela a contagem inteira; membro só desmarca o próprio pronto.
+		--
+		-- Bumpar o seq é o que MATA a thread em voo: ela revalida o token no próximo yield e
+		-- aborta. Só trocar o status não bastaria — a thread ainda estaria entre dois yields e
+		-- poderia reservar servidor ou teleportar depois do cancelamento.
+		if party.status ~= "teleporting" then
+			return
+		end
+
+		if player == party.leader then
+			party.seq += 1
+			party.status = "waiting"
+			party.timer = 0
+			party.reservedCode = nil
+			party.reservedPrivateServerId = nil
+
+			for _, member in ipairs(party.members) do
+				member:SetAttribute("IsReady", nil)
+			end
+
+			broadcast(index, "Update")
+		else
+			player:SetAttribute("IsReady", nil)
+			broadcast(index, "Update")
+		end
 	elseif action == "Ready" then
 		if party.status == "teleporting" then
 			player:SetAttribute("IsReady", true)
@@ -406,6 +537,16 @@ end
 
 function AreaTeleportService.Init()
 	ensureRemotes()
+
+	-- Publica a lotação como atributo do Remotes: o cliente lê daqui em vez de duplicar os
+	-- números. Atributo replica sozinho, então não precisa de remote nem de handshake.
+	RemotesFolder:SetAttribute("MinPlayers", Config.MinPlayers)
+	RemotesFolder:SetAttribute("MaxPlayers", Config.MaxPlayers)
+
+	mainSpawn = workspace:FindFirstChild(Config.MainSpawnName)
+	if not mainSpawn then
+		warn(string.format("[AreaTeleportService] workspace.%s não encontrado — quem sair da party fica em pé no pad.", Config.MainSpawnName))
+	end
 
 	if Config.MatchPlaceId == 0 then
 		warn("[AreaTeleportService] MatchPlaceId = 0 em TeleportConfig — os pads sobem, mas o Play é recusado.")
@@ -424,6 +565,8 @@ function AreaTeleportService.Init()
 		parties[index] = {
 			name = padName,
 			model = model,
+			sign = nil,
+			spawnPart = nil,
 			leader = nil,
 			members = {},
 			status = "waiting",
@@ -436,15 +579,37 @@ function AreaTeleportService.Init()
 		if not model then
 			warn(string.format("[AreaTeleportService] pad %s não encontrado em workspace.%s.", padName, Config.PadsFolder))
 		else
-			local gate = findGate(model)
-			if gate then
-				gate.Touched:Connect(function(hit)
-					onGateTouched(index, hit)
-				end)
+			local inner = findInner(model)
+
+			if not inner then
+				warn(string.format("[AreaTeleportService] pad %s sem o sub-Model '%s'.", padName, Config.PadInnerModel))
 			else
-				warn(string.format("[AreaTeleportService] pad %s sem BasePart de toque.", padName))
+				parties[index].sign = findSign(inner)
+				if not parties[index].sign then
+					warn(string.format("[AreaTeleportService] pad %s sem cartaz (%s.%s.%s) — lotação e timer não aparecem.", padName, Config.BillboardPartName, Config.BillboardGuiName, Config.BillboardFrameName))
+				end
+
+				local spawnPart = inner:FindFirstChild(Config.SpawnPartName)
+				if spawnPart and spawnPart:IsA("BasePart") then
+					parties[index].spawnPart = spawnPart
+				else
+					warn(string.format("[AreaTeleportService] pad %s sem a BasePart '%s' — quem entrar não é posicionado.", padName, Config.SpawnPartName))
+				end
+
+				local gate = findGate(inner)
+				if gate then
+					gate.Touched:Connect(function(hit)
+						onGateTouched(index, hit)
+					end)
+				else
+					warn(string.format("[AreaTeleportService] pad %s sem a BasePart '%s' — pad inativo.", padName, Config.GatePartName))
+				end
 			end
 		end
+
+		-- Cartaz zerado no boot: sem isto ele fica com o texto autorado no Studio até o primeiro
+		-- jogador pisar, mostrando lotação mentirosa num pad vazio.
+		updateSign(index)
 	end
 
 	enabled = true

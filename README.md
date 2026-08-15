@@ -106,16 +106,35 @@ exploit.
 O `.rbxl` não é versionado, então os pads são montados no Studio:
 
 ```
-workspace/
-└── Tp/                  # TeleportConfig.PadsFolder
-    ├── Party_1/         # PadPrefix .. i, até PadCount
-    │   └── Gate         # BasePart de toque (GatePartName)
-    ├── Party_2/
-    └── Party_3/
+workspace/Tp/                        # PadsFolder
+└── Party_1/                         # PadPrefix .. i, até PadCount
+    └── Model/                       # PadInnerModel
+        ├── gate                     # BasePart de toque — nome MINÚSCULO
+        ├── spawn                    # onde os membros ficam em pé
+        └── billboardPart/billboardGui/Frame/
+            ├── Players              # TextButton — "N/5"
+            └── Timer                # TextButton — "Ns" durante a contagem
 ```
 
-Faltando a pasta, o serviço avisa e desliga em vez de derrubar o boot. Sem uma `Gate`, cai na
-primeira `BasePart` do Model.
+Os nomes são minúsculos e `FindFirstChild` é case-sensitive. **Não há fallback** para "primeira
+`BasePart` do Model": o pad tem várias (`Union`, `Zone`, `spawn`) e escolher a errada ligaria o
+`Touched` numa peça decorativa — falha silenciosa. Nome que não bate vira aviso e pad inativo.
+
+Faltando a pasta `Tp`, o serviço avisa e desliga em vez de derrubar o boot.
+
+### Painel do cliente
+
+```
+StarterGui.MainGui.Frame_Party
+└── Frame_Play
+    ├── Play_Button.{Button, Background}    # Start / Ready / Cancel
+    └── Exit_Button.{Button, Background}    # sair da party
+```
+
+[PartyController.lua](src-lobby/client/Source/Controllers/PartyController.lua) só troca rótulo e
+cor do botão — lotação e contagem ficam no cartaz do pad, não no painel. O botão dispara sempre a
+ação que está escrita nele; quem separa "líder cancela a contagem" de "membro desmarca o pronto"
+é o servidor, que sabe quem lidera.
 
 ### Onde plugar a lógica do Prisoners
 
