@@ -4,10 +4,10 @@ local PartyController = {}
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
+
+local Motion = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Motion"))
 
 local DEBOUNCE = 0.4
-local TWEEN_INFO = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 -- Cor do botão no estado Cancel. O resto do visual vem do Studio.
 local CANCEL_STROKE = Color3.fromRGB(79, 111, 255)
@@ -17,8 +17,8 @@ local player
 local ActionEvent
 local remotesFolder
 local panel
-local playButton, playVisual, playBackground
-local exitButton
+local playVisual, playBackground
+local exitButton, exitBackground
 local playStroke, backgroundStroke
 local origStrokeColor, origBackgroundColor, origBackgroundStrokeColor
 
@@ -29,22 +29,18 @@ local lastStatus = "waiting"
 local lastRole = nil
 local lastCount = 0
 
-local function pressAnimation(visual, clickable)
-	local originalSize = visual.Size
-	local shrunk = UDim2.new(
-		originalSize.X.Scale * 0.9, originalSize.X.Offset * 0.9,
-		originalSize.Y.Scale * 0.9, originalSize.Y.Offset * 0.9
-	)
+-- Escala o Background e o rótulo juntos. Sem glow: o UIStroke daqui carrega o estado
+-- de Cancel em setCancelLook.
+local function bindPress(background, label)
+	local parts = {}
 
-	local function reset()
-		TweenService:Create(visual, TWEEN_INFO, { Size = originalSize }):Play()
+	for _, part in ipairs({ background, label }) do
+		if part then
+			parts[#parts + 1] = part
+		end
 	end
 
-	clickable.MouseButton1Down:Connect(function()
-		TweenService:Create(visual, TWEEN_INFO, { Size = shrunk }):Play()
-	end)
-	clickable.MouseButton1Up:Connect(reset)
-	clickable.MouseLeave:Connect(reset)
+	Motion.BindButton(parts, parts)
 end
 
 local function setLabel(text)
@@ -130,8 +126,8 @@ function PartyController.Init()
 
 	playVisual = playFrame:WaitForChild("Button")
 	exitButton = exitFrame:WaitForChild("Button")
-	playButton = playFrame
 	playBackground = playFrame:FindFirstChild("Background")
+	exitBackground = exitFrame:FindFirstChild("Background")
 
 	playStroke = playVisual:FindFirstChild("UIStroke")
 	if playStroke then
@@ -145,8 +141,8 @@ function PartyController.Init()
 		end
 	end
 
-	pressAnimation(playButton, playVisual)
-	pressAnimation(exitFrame, exitButton)
+	bindPress(playBackground, playVisual)
+	bindPress(exitBackground, exitButton)
 
 	hide()
 
@@ -181,16 +177,25 @@ function PartyController.Start()
 		ActionEvent:FireServer(action)
 	end
 
-	playVisual.MouseButton1Click:Connect(function()
-		if currentAction then
-			fire(currentAction)
+	-- O rótulo cobre 35% da largura: sem o Background, a borda do botão não clica.
+	for _, clickable in ipairs({ playVisual, playBackground }) do
+		if clickable then
+			clickable.Activated:Connect(function()
+				if currentAction then
+					fire(currentAction)
+				end
+			end)
 		end
-	end)
+	end
 
-	exitButton.MouseButton1Click:Connect(function()
-		fire("Leave")
-		hide()
-	end)
+	for _, clickable in ipairs({ exitButton, exitBackground }) do
+		if clickable then
+			clickable.Activated:Connect(function()
+				fire("Leave")
+				hide()
+			end)
+		end
+	end
 end
 
 return PartyController

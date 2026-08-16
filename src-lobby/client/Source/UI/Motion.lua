@@ -87,8 +87,8 @@ function Motion.TweenFade(targets, alpha, info)
 end
 
 -- `visual` é o que escala e gira: um GuiObject ou uma lista deles. `buttons` são os
--- GuiButton que disparam o efeito. config.ClickButtons restringe o OnClick a um
--- subconjunto; sem ele, vale a lista toda.
+-- GuiButton que disparam o efeito, e perdem o AutoButtonColor. config.ClickButtons
+-- restringe o OnClick a um subconjunto; sem ele, vale a lista toda.
 function Motion.BindButton(visual, buttons, config)
 	config = config or {}
 
@@ -158,6 +158,8 @@ function Motion.BindButton(visual, buttons, config)
 	end
 
 	for _, button in ipairs(buttons) do
+		button.AutoButtonColor = false
+
 		button.MouseEnter:Connect(function()
 			hovering = true
 			refresh()
