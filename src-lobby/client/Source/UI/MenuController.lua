@@ -6,12 +6,14 @@ local MenuController = {}
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 
+local ClassList = require(script.Parent:WaitForChild("ClassList"))
+local ClassViewer = require(script.Parent:WaitForChild("ClassViewer"))
 local Motion = require(script.Parent:WaitForChild("Motion"))
 
 -- Tile em Frame_Home -> painel irmão em MainGui. Scroller recebe o stagger dos cards.
 -- AnchorPoint/Position sobrescrevem o Studio enquanto o painel está aberto; Slide é o
 -- deslocamento em escala X de onde ele entra e para onde sai; HideHome tira o Frame_Home
--- da tela antes de abrir.
+-- da tela antes de abrir; Viewer troca o fundo escurecido pela sala 3D do ClassViewer.
 local PANELS = {
 	{
 		Tile = "Class",
@@ -21,6 +23,7 @@ local PANELS = {
 		Position = UDim2.new(0.01, 0, 0.5, 0),
 		Slide = -0.05,
 		HideHome = true,
+		Viewer = true,
 	},
 	{ Tile = "Shop", Panel = "Frame_Shop", Scroller = "Hud" },
 }
@@ -56,12 +59,14 @@ local active = nil
 local pending = nil
 local sequence = 0
 
-local function setChrome(visible)
+-- `muted` mantém o backdrop só como pegador de clique: sem escurecer nem borrar, senão
+-- a sala 3D do viewer apareceria atrás de um véu.
+local function setChrome(visible, muted)
 	if visible then
 		backdrop.Visible = true
-		blur.Enabled = true
-		Motion.Tween(backdrop, Motion.Fade, { BackgroundTransparency = BACKDROP_TRANSPARENCY })
-		Motion.Tween(blur, Motion.Fade, { Size = BLUR_SIZE })
+		blur.Enabled = not muted
+		Motion.Tween(backdrop, Motion.Fade, { BackgroundTransparency = muted and 1 or BACKDROP_TRANSPARENCY })
+		Motion.Tween(blur, Motion.Fade, { Size = muted and 0 or BLUR_SIZE })
 		return
 	end
 
@@ -125,6 +130,10 @@ local function open(entry)
 
 	entry.Panel.Visible = true
 
+	if entry.Viewer then
+		ClassViewer.Open(ClassList.Selected(), backdrop)
+	end
+
 	Motion.Tween(entry.Scale, Motion.PanelIn, { Scale = 1 })
 	Motion.Tween(entry.Panel, Motion.PanelIn, { Position = entry.Position, Rotation = 0 })
 	Motion.TweenFade(entry.Fade, 1, Motion.Fade)
@@ -137,6 +146,10 @@ local function close(entry)
 
 	if active == entry then
 		active = nil
+	end
+
+	if entry.Viewer then
+		ClassViewer.Close()
 	end
 
 	Motion.Tween(entry.Scale, Motion.PanelOut, { Scale = PANEL_EXIT_SCALE })
@@ -177,7 +190,7 @@ local function toggle(entry)
 		close(active)
 	end
 
-	setChrome(true)
+	setChrome(true, entry.Viewer)
 	local slideTime = setHome(not entry.HideHome)
 
 	if slideTime <= 0 then
@@ -230,6 +243,7 @@ local function buildEntry(panel, config)
 		Fade = Motion.SnapshotFade(panel),
 		Scroller = config.Scroller and panel:FindFirstChild(config.Scroller),
 		HideHome = config.HideHome or false,
+		Viewer = config.Viewer or false,
 		BaseZIndex = panel.ZIndex,
 		AnchorPoint = anchorPoint,
 		Position = position,
@@ -296,7 +310,12 @@ function MenuController.Init()
 	blur.Enabled = false
 	blur.Parent = Lighting
 
+	-- Arrastar no backdrop orbita a câmera do viewer; só clique seco fecha o painel.
 	backdrop.Activated:Connect(function()
+		if ClassViewer.ConsumeDrag() then
+			return
+		end
+
 		local current = active or pending
 		if current then
 			toggle(current)
@@ -308,8 +327,14 @@ function MenuController.Init()
 	for _, config in ipairs(PANELS) do
 		local tile = home:WaitForChild(config.Tile)
 		local panel = mainGui:WaitForChild(config.Panel)
-		local entry = buildEntry(panel, config)
 
+		-- Antes do buildEntry: ele tira o snapshot de transparência e já deixa o painel
+		-- em fade 0, então card clonado depois nasceria invisível e sem stagger.
+		if config.Viewer then
+			ClassList.Build(panel)
+		end
+
+		local entry = buildEntry(panel, config)
 		wired[tile] = true
 		Motion.BindButton(tile, collectButtons(tile), {
 			Stroke = strokeOf(tile),
