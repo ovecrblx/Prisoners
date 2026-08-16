@@ -1,21 +1,5 @@
--- Persistência do jogador (lado Match). NÃO é dono do schema — o Lobby é.
---
--- === O MESMO PERFIL DO LOBBY ===================================================================
--- Mesmo STORE_NAME, mesma key ("Player_"..UserId): este place carrega LITERALMENTE o mesmo
--- registro que o lobby carregou. Não há cópia nem sincronização. Gravar `Wins` aqui já é o
--- handoff de volta — quando o jogador retorna ao lobby, o valor está lá.
---
--- Isso substitui o canal TeleportData de volta, que era forjável: um cliente podia anunciar
--- "ganhei 1e9" na volta e virar top do ranking. Aqui só o servidor da partida escreve.
---
--- === A REGRA QUE MAIS DÓI: COLISÃO DE CHAVE ====================================================
--- Reconcile PREENCHE chave faltante; NUNCA troca o tipo de uma que já existe. Então, se o Lobby
--- um dia gravar `Level` como TABELA (nível por item, por exemplo) e este place tratar `Level`
--- como NÚMERO, o perfil chega com tabela e toda aritmética estoura — em produção, no perfil de
--- quem já passou pelo lobby, e não no seu teste com perfil novo.
---
--- Daí a convenção: campo que é só desta place ganha prefixo `Match`. Campo compartilhado só
--- entra se tiver o MESMO NOME e o MESMO TIPO nos dois lados.
+-- Persistência do jogador (Match). O schema é do Lobby.
+-- Gold e Wins são campos compartilhados: gravar aqui é o handoff de volta.
 local PlayerData = {}
 
 local Players = game:GetService("Players")
@@ -26,13 +10,10 @@ local ProfileStore = require(ServerScriptService:WaitForChild("Packages"):WaitFo
 
 local Store
 
--- IDÊNTICO ao de src-lobby/server/Source/Data/PlayerData.lua. Divergiu, os dois places veem
--- perfis diferentes e o progresso da partida nunca aparece no lobby. São árvores independentes:
--- não há import cruzado que garanta isso, só disciplina.
+-- Precisa ser igual ao de src-lobby/server/Source/Data/PlayerData.lua.
 local STORE_NAME = RunService:IsStudio() and "ALT_Data_Prisoners" or "Data_Prisoners"
 
--- Só o que ESTA place possui. `Gold` e `Wins` NÃO entram aqui: pertencem ao schema do lobby, e
--- este place os lê/incrementa com (or 0) para o caso de um perfil que nunca passou por lá.
+-- Só o que este place possui. Prefixo Match evita colidir com chave do Lobby.
 local TEMPLATE = {
 	MatchLevel = 1,
 	MatchXP = 0,
@@ -87,9 +68,6 @@ function PlayerData.Get(player)
 	return profile and profile.Data or nil
 end
 
--- Credita vitória no campo COMPARTILHADO. Autoritativo: só o servidor da partida chama, no fim
--- do jogo. `Wins` pertence ao schema do lobby, então num perfil que nunca passou por lá chega
--- nil — daí o (or 0).
 function PlayerData.AddWins(player, amount)
 	if not isSafeNumber(amount) or amount <= 0 then
 		return false
@@ -104,8 +82,6 @@ function PlayerData.AddWins(player, amount)
 	return true
 end
 
--- Credita Ouro no campo COMPARTILHADO (mesmo nome e tipo do lobby). É o que faz o jogador voltar
--- ao lobby já com o que ganhou na partida.
 function PlayerData.AddGold(player, amount)
 	if not isSafeNumber(amount) then
 		warn("[PlayerData] AddGold recusado: valor inválido (" .. tostring(amount) .. ")")
@@ -135,9 +111,7 @@ function PlayerData.AddXP(player, amount)
 	return true
 end
 
--- Grava na hora, sem esperar o auto-save (300s). Chame no FIM DA PARTIDA: o teleporte de volta
--- ao lobby vem logo depois, e o que não foi salvo até o EndSession ainda depende do encerramento
--- limpo. Um crash do servidor no meio perde o resultado inteiro.
+-- Grava fora do auto-save de 300s. Chamar no fim da partida.
 function PlayerData.Flush(player)
 	local profile = Profiles[player]
 	if profile then

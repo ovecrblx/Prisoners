@@ -1,15 +1,5 @@
--- Cartão acima da cabeça — LADO CLIENTE: faz o painel encarar a câmera.
---
--- O cartão usa SurfaceGui, não BillboardGui: mantém nitidez à distância (PixelsPerStud alto),
--- mas perde o auto-facing que o BillboardGui dava de graça. Este controller devolve o facing.
---
--- Mecanismo: o accessory é preso à Head por um Weld "AccessoryWeld" (Part0=Handle, Part1=Head),
--- convertido do RigidConstraint pelo servidor. A cada frame reescrevemos o C0 desse weld para
--- orientar o Handle na direção da câmera.
---
--- Roda LOCAL, por cliente. Escrita de propriedade no cliente não replica, e o servidor nunca
--- toca no C0 — então cada jogador orienta os cartões para a SUA câmera, sem custo de rede e sem
--- um cliente afetar a tela do outro.
+-- Faz o cartão acima da cabeça encarar a câmera, reescrevendo o C0 do weld por frame.
+-- SurfaceGui não tem auto-facing. Roda local: a escrita não replica.
 local OverheadCardController = {}
 
 local Players = game:GetService("Players")
@@ -20,12 +10,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Ov
 
 local RADIUS_SQ = Config.FacingRadius * Config.FacingRadius
 
--- C0 de descanso por weld — define a POSIÇÃO do cartão (acima da Head) e é capturado na primeira
--- passagem, antes de qualquer reescrita. Sem guardar o original, cada frame calcularia a pose a
--- partir da já rotacionada e o cartão iria derivando.
---
--- Chaves fracas: o weld some ao respawnar ou o jogador sair, e a entrada tem que poder ser
--- coletada junto. Com chave forte esta tabela cresceria por respawn até o fim da sessão.
+-- C0 de descanso por weld. Chaves fracas: o weld some no respawn.
 local baseC0 = setmetatable({}, { __mode = "k" })
 
 local function faceCamera(weld, head, cameraPosition)
@@ -37,18 +22,12 @@ local function faceCamera(weld, head, cameraPosition)
 
 	local headCF = head.CFrame
 	local c1 = weld.C1
-
-	-- Posição de descanso do Handle, preservada: só a ORIENTAÇÃO muda. Recalcular a posição aqui
-	-- faria o cartão escorregar da cabeça conforme a câmera gira.
 	local restPosition = (headCF * c1 * base:Inverse()).Position
 
-	-- Câmera praticamente em cima do cartão: lookAt com direção ~zero produz CFrame degenerado.
 	if (cameraPosition - restPosition).Magnitude < 1e-3 then
 		return
 	end
 
-	-- A face frontal do Handle (-Z, onde mora o SurfaceGui) aponta para a câmera. Resolve o C0
-	-- que coloca o Handle (Part0) nesse CFrame, ancorado na Head (Part1): D*C0 == Head*C1.
 	local target = CFrame.lookAt(restPosition, cameraPosition)
 	weld.C0 = target:Inverse() * headCF * c1
 end
@@ -69,8 +48,6 @@ function OverheadCardController.Start()
 			local head = character and character:FindFirstChild("Head")
 
 			if handle and head then
-				-- Distância AO QUADRADO: isto roda por jogador, por frame. Uma raiz quadrada por
-				-- jogador por frame é gasto puro quando o único uso é comparar com um limite.
 				local delta = handle.Position - cameraPosition
 				if delta:Dot(delta) <= RADIUS_SQ then
 					local weld = handle:FindFirstChild(Config.WeldName)

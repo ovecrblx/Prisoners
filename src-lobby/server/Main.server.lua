@@ -1,6 +1,6 @@
--- Boot do servidor. Varre ServerScriptService.Source, carrega todo ModuleScript,
--- e roda Init em TODOS antes de rodar Start em qualquer um — serviço que depende
--- de outro no Init encontra o outro já inicializado.
+-- Boot do servidor. Carrega ServerScriptService.Source e roda Init em todos antes de Start em
+-- qualquer um. Start roda em task.spawn, então pode render.
+-- Falha isolada por pcall; derruba o atributo ServerScriptService.BootHealthy.
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Source = ServerScriptService:WaitForChild("Source")
@@ -9,7 +9,6 @@ local loadedServices = {}
 local function LoadModules(folder)
 	for _, item in ipairs(folder:GetChildren()) do
 		if item:IsA("ModuleScript") then
-			-- pcall isola a falha: um módulo quebrado não derruba o boot inteiro.
 			local success, result = pcall(require, item)
 
 			if success then
@@ -27,9 +26,6 @@ end
 
 LoadModules(Source)
 
--- Sinal de saúde do boot: começa otimista; QUALQUER falha de Init/Start abaixo o derruba.
--- NÃO estanca o boot (os pcalls isolam as falhas); só expõe um atributo observável, já que
--- sem isto um serviço crítico podia falhar o Init e o servidor parecer "pronto" mesmo quebrado.
 ServerScriptService:SetAttribute("BootHealthy", true)
 
 for _, service in ipairs(loadedServices) do

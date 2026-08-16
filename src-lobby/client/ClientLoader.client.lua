@@ -1,4 +1,5 @@
 -- Boot do cliente. Mesmo contrato do servidor: Init em todos, depois Start em todos.
+-- Só registra ModuleScript que exporte Init ou Start.
 local Source = script.Parent:WaitForChild("Source", 10)
 
 if not Source then

@@ -1,18 +1,5 @@
--- Painel da party (cliente / Lobby) — MainGui.Frame_Party.
---
--- A party é FÍSICA: o jogador entra encostando no pad (workspace.Tp.Party_N) e fica em pé nele.
--- O cartaz do próprio pad já mostra lotação e contagem, então este painel NÃO tem lista de
--- membros, timer nem card de líder — só os dois botões.
---
--- Hierarquia esperada (a que existe no place; conferida via inspeção do Studio):
---   MainGui.Frame_Party
---     Frame_Play.Play_Button.Button   TextButton — Start / Ready / Cancel
---     Frame_Play.Play_Button.Background   ImageButton (recolore quando vira Cancel)
---     Frame_Play.Exit_Button.Button   TextButton — sair da party
---     Frame_Play.Exit_Button.Background
---
--- O painel do Code-Egg tinha um Frame_Top (Info.ViewportFrame, rótulo de status, Frame_Close)
--- que este place NÃO tem. Nada aqui depende dele.
+-- Painel da party: MainGui.Frame_Party.Frame_Play.{Play_Button, Exit_Button}.{Button, Background}
+-- Botão Play alterna entre Start, Ready, Cancel e rótulos inertes (o servidor recusaria a ação).
 local PartyController = {}
 
 local Players = game:GetService("Players")
@@ -22,30 +9,25 @@ local TweenService = game:GetService("TweenService")
 local DEBOUNCE = 0.4
 local TWEEN_INFO = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
--- Cor do botão quando ele vira "Cancel".
+-- Cor do botão no estado Cancel. O resto do visual vem do Studio.
 local CANCEL_STROKE = Color3.fromRGB(79, 111, 255)
 local CANCEL_BG = Color3.fromRGB(49, 86, 255)
 
 local player
 local ActionEvent
+local remotesFolder
 local panel
 local playButton, playVisual, playBackground
 local exitButton
 local playStroke, backgroundStroke
 local origStrokeColor, origBackgroundColor, origBackgroundStrokeColor
 
--- Estado da última mensagem do servidor. O clique lê daqui em vez de recalcular: assim o botão
--- nunca dispara uma ação diferente da que está escrita nele.
 local currentAction = nil
 local isLeader = false
 local lastClick = 0
-
--- Última mensagem recebida, para reaplicar o visual quando só o IsReady mudar.
 local lastStatus = "waiting"
 local lastRole = nil
 local lastCount = 0
-
-local remotesFolder
 
 local function pressAnimation(visual, clickable)
 	local originalSize = visual.Size
@@ -77,8 +59,6 @@ local function setLabel(text)
 	end
 end
 
--- Visual de "Cancel" (azul) vs. estado normal. As cores originais são lidas no Init, então o
--- que o Studio autorou continua sendo a fonte da verdade — nada é hardcoded exceto o azul.
 local function setCancelLook(active)
 	if playStroke then
 		playStroke.Color = active and CANCEL_STROKE or origStrokeColor
@@ -91,18 +71,10 @@ local function setCancelLook(active)
 	end
 end
 
--- Decide o que o botão diz e o que ele dispara, a partir do estado que o servidor mandou.
---
--- O servidor só aceita "Ready"/"Cancel" durante a contagem. Por isso o membro fora dela vê
--- "Aguardando" com o clique inerte, em vez de um "Ready" que não faria nada — botão que não
--- responde parece bug.
 local function applyState(status, role)
 	isLeader = (role == "Leader")
 
 	if status == "teleporting" then
-		-- Líder cancela a contagem inteira; membro já pronto desmarca o próprio pronto. Botão
-		-- igual, ação igual ("Cancel") — quem separa os dois casos é o servidor, que sabe quem
-		-- lidera. O membro ainda não pronto vê "Ready".
 		if isLeader or player:GetAttribute("IsReady") then
 			currentAction = "Cancel"
 			setLabel("Cancel")
@@ -113,15 +85,11 @@ local function applyState(status, role)
 			setCancelLook(false)
 		end
 	elseif status == "recycling" then
-		-- Colchão pós-teleporte: o pad está fechado e a party vai ser esvaziada. Nada a fazer.
 		currentAction = nil
 		setLabel("...")
 		setCancelLook(false)
 	else
 		if isLeader then
-			-- MinPlayers vem como atributo do Remotes, publicado pelo servidor — o cliente não
-			-- duplica o número. O servidor recusa Play abaixo do mínimo de qualquer jeito; o que
-			-- se evita aqui é o clique que não faz nada, que o jogador lê como botão quebrado.
 			local minPlayers = remotesFolder:GetAttribute("MinPlayers") or 1
 			if lastCount < minPlayers then
 				currentAction = nil
@@ -180,8 +148,6 @@ function PartyController.Init()
 	pressAnimation(playButton, playVisual)
 	pressAnimation(exitFrame, exitButton)
 
-	-- O Frame_Party nasce Visible=true no Studio (é assim que dá para editá-lo). Some até o
-	-- jogador entrar num pad.
 	hide()
 
 	updateEvent.OnClientEvent:Connect(function(instruction, _padName, count, status, _timer, role)
@@ -197,10 +163,7 @@ function PartyController.Init()
 		applyState(status, role)
 	end)
 
-	-- IsReady é atributo do Player, e atributo replica por um canal DIFERENTE do RemoteEvent —
-	-- sem ordem garantida entre os dois. Só ler o atributo dentro do handler do evento deixaria
-	-- o botão com o valor velho sempre que a replicação chegasse depois. Isso aparece de verdade
-	-- no auto-ready dos 3s, que o servidor aplica sem mandar evento novo por jogador.
+	-- Atributo e RemoteEvent replicam sem ordem garantida entre si.
 	player:GetAttributeChangedSignal("IsReady"):Connect(function()
 		if panel.Visible and lastRole then
 			applyState(lastStatus, lastRole)
@@ -219,7 +182,6 @@ function PartyController.Start()
 	end
 
 	playVisual.MouseButton1Click:Connect(function()
-		-- currentAction nil = estado sem ação (membro fora da contagem, ou reciclando).
 		if currentAction then
 			fire(currentAction)
 		end
@@ -227,8 +189,6 @@ function PartyController.Start()
 
 	exitButton.MouseButton1Click:Connect(function()
 		fire("Leave")
-		-- Esconde na hora em vez de esperar o "Hide" do servidor: o round-trip deixa o painel
-		-- aberto por um instante depois do clique, e parece que o botão falhou.
 		hide()
 	end)
 end
