@@ -6,9 +6,9 @@ local ClassConfig = {}
 -- Title: texto do card. Icon: rbxassetid; string vazia mantém a imagem do template.
 -- Price: preço exibido no botão Buy, em Gold.
 ClassConfig.List = {
-	{ Id = "akame", Title = "Akame", Icon = "", Price = 0 },
-	{ Id = "azy", Title = "Azy", Icon = "", Price = 0 },
-	{ Id = "ovec", Title = "Ovec", Icon = "", Price = 0 },
+	{ Id = "akame", Title = "Akame", Icon = "rbxassetid://119583885663870", Price = 99 },
+	{ Id = "azy", Title = "Azy", Icon = "rbxassetid://105286110390630", Price = 49 },
+	{ Id = "ovec", Title = "Ovec", Icon = "rbxassetid://95887552055121", Price = 29 },
 }
 
 ClassConfig.ById = {}
