@@ -2,7 +2,7 @@
 local ClassConfig = {}
 
 -- Id: chave estável, usada em save e em RemoteEvent. Não renomear depois de publicado.
--- Rig: pasta em ReplicatedStorage.Client.Models.Character (padrão: o próprio Id).
+-- Rig: pasta em ReplicatedStorage.Client.Character (padrão: o próprio Id).
 -- Title: texto do card. Icon: rbxassetid; string vazia mantém a imagem do template.
 -- Price: preço em diamante, exibido direto. ProductId: DeveloperProduct da compra em
 -- Robux; o preço dele vem do produto real, publicado pelo servidor (ver ClassPriceService).

@@ -60,8 +60,7 @@ end
 
 local function characterFolder()
 	local client = ReplicatedStorage:WaitForChild("Client", 10)
-	local models = client and client:WaitForChild("Models", 10)
-	return models and models:WaitForChild("Character", 10)
+	return client and client:WaitForChild("Character", 10)
 end
 
 -- O nome da pasta vem do ClassConfig; o place só entra com o modelo.
