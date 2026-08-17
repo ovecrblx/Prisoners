@@ -68,6 +68,27 @@ function PlayerData.Get(player)
 	return profile and profile.Data or nil
 end
 
+-- Campo do Lobby: perfil que nunca passou por lá não tem a chave.
+function PlayerData.GetEquippedClass(player)
+	local profile = Profiles[player]
+	return profile and profile.Data.EquippedClass or ""
+end
+
+function PlayerData.OwnsClass(player, classId)
+	local profile = Profiles[player]
+	if not profile then
+		return false
+	end
+
+	for _, owned in ipairs(profile.Data.Classes or {}) do
+		if owned == classId then
+			return true
+		end
+	end
+
+	return false
+end
+
 function PlayerData.AddWins(player, amount)
 	if not isSafeNumber(amount) or amount <= 0 then
 		return false
