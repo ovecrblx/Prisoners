@@ -20,12 +20,27 @@ local TEMPLATE = {
 	Wins = 0,
 	FirstJoin = 0,
 	LastSeen = 0,
+	Classes = {},
+	EquippedClass = "",
 }
 
 local Profiles = {}
 
+-- Atributo é o canal de leitura do cliente; Classes vai como lista separada por vírgula
+-- porque atributo não guarda tabela.
 local function publish(player, profile)
 	player:SetAttribute("Gold", profile.Data.Gold or 0)
+	player:SetAttribute("OwnedClasses", table.concat(profile.Data.Classes or {}, ","))
+	player:SetAttribute("EquippedClass", profile.Data.EquippedClass or "")
+end
+
+local function ownsClass(data, classId)
+	for _, owned in ipairs(data.Classes or {}) do
+		if owned == classId then
+			return true
+		end
+	end
+	return false
 end
 
 local function isSafeNumber(value)
@@ -102,6 +117,59 @@ function PlayerData.AddGold(player, amount)
 	end
 
 	profile.Data.Gold += amount
+	publish(player, profile)
+	return true
+end
+
+-- false = não debitou, e nesse caso nada foi cobrado. Checar antes de entregar o item.
+function PlayerData.SpendGold(player, amount)
+	if not isSafeNumber(amount) or amount < 0 then
+		warn("[PlayerData] SpendGold recusado: valor inválido (" .. tostring(amount) .. ")")
+		return false
+	end
+
+	local profile = Profiles[player]
+	if not profile or profile.Data.Gold < amount then
+		return false
+	end
+
+	profile.Data.Gold -= amount
+	publish(player, profile)
+	return true
+end
+
+function PlayerData.OwnsClass(player, classId)
+	local profile = Profiles[player]
+	return profile ~= nil and ownsClass(profile.Data, classId)
+end
+
+function PlayerData.GetEquippedClass(player)
+	local profile = Profiles[player]
+	return profile and profile.Data.EquippedClass or ""
+end
+
+function PlayerData.AddClass(player, classId)
+	local profile = Profiles[player]
+	if not profile or type(classId) ~= "string" or ownsClass(profile.Data, classId) then
+		return false
+	end
+
+	table.insert(profile.Data.Classes, classId)
+	publish(player, profile)
+	return true
+end
+
+-- String vazia desequipa. Classe não possuída é recusada.
+function PlayerData.SetEquippedClass(player, classId)
+	local profile = Profiles[player]
+	if not profile or type(classId) ~= "string" then
+		return false
+	end
+	if classId ~= "" and not ownsClass(profile.Data, classId) then
+		return false
+	end
+
+	profile.Data.EquippedClass = classId
 	publish(player, profile)
 	return true
 end
