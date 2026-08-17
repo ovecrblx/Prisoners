@@ -21,6 +21,12 @@ local RIG_GAP = 0.05
 -- FieldOfView da câmera enquanto o viewer está aberto, em graus.
 local VIEWER_FOV = 60
 
+-- Idle do próprio avatar: Animate.idle.Animation1, o mesmo asset que o personagem usa em
+-- jogo. O Animate é LocalScript e não roda fora do Character do jogador, então serve só
+-- como fonte do AnimationId; quem toca é o Animator.
+local IDLE_TRACK = "Animation1"
+local IDLE_FADE = 0.3
+
 -- Giro: graus por pixel arrastado, teto da velocidade em graus/s, amortecimento da
 -- inércia (maior = para antes) e velocidade abaixo da qual o giro zera.
 local ROTATE_SPEED = 0.55
@@ -37,7 +43,7 @@ local INTRO_INFO = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirecti
 local DRAG_THRESHOLD = 6
 
 local scene, rig, camPart, basePart
-local rigPosition
+local rigPosition, idleTrack
 local yaw, spin, lastYaw = 0, 0, 0
 local savedType, savedCFrame, savedSubject, savedFov
 local dragging, dragMoved = false, false
@@ -103,7 +109,36 @@ local function standPosition()
 	return Vector3.new(basePart.Position.X, top + soleOffset + RIG_GAP, basePart.Position.Z)
 end
 
+-- Uma track por vez: só a classe em cena anima, e ela morre junto com o rig anterior.
+local function playIdle()
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	local animate = rig:FindFirstChild("Animate")
+	local idle = animate and animate:FindFirstChild("idle")
+	local source = idle and idle:FindFirstChild(IDLE_TRACK)
+
+	if not (animator and source) then
+		warn("[ClassViewer] Sem Animator ou sem Animate.idle." .. IDLE_TRACK .. " no rig.")
+		return
+	end
+
+	idleTrack = animator:LoadAnimation(source)
+	idleTrack.Looped = true
+	idleTrack.Priority = Enum.AnimationPriority.Idle
+	idleTrack:Play(IDLE_FADE)
+end
+
+local function stopIdle()
+	if idleTrack then
+		idleTrack:Stop(0)
+		idleTrack:Destroy()
+		idleTrack = nil
+	end
+end
+
 local function loadRig(classId)
+	stopIdle()
+
 	if rig then
 		rig:Destroy()
 		rig = nil
@@ -134,6 +169,7 @@ local function loadRig(classId)
 		root.Anchored = true
 	end
 
+	playIdle()
 	return true
 end
 
@@ -296,6 +332,7 @@ end
 
 function ClassViewer.Close()
 	disconnectAll()
+	stopIdle()
 	dragging, dragMoved = false, false
 	yaw, spin, lastYaw = 0, 0, 0
 
