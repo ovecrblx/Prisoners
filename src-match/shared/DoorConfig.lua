@@ -31,7 +31,7 @@ DoorConfig.EasingDirection = Enum.EasingDirection.Out
 -- Clicável só no toque: no PC o alvo de clique cobre o prompt inteiro e engole o arrasto do
 -- mouse, travando a câmera de quem mira nele.
 DoorConfig.PromptDistance = 10
-DoorConfig.PromptOffset = Vector2.new(-60, 60)
+DoorConfig.PromptOffset = Vector2.new(0, 50)
 DoorConfig.PromptClickable = false
 
 function DoorConfig.Number(model, name, default)
