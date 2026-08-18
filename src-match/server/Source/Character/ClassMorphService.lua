@@ -9,8 +9,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClassConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ClassConfig"))
 local PlayerData = require(script.Parent.Parent:WaitForChild("Data"):WaitForChild("PlayerData"))
 
-local EQUIPPED_ATTRIBUTE = "EquippedClass"
-
 -- Segundos até renascer depois da morte.
 local RESPAWN_DELAY = 5
 
@@ -109,7 +107,7 @@ function spawnFor(player)
 	awaitProfile(player)
 
 	local classId = PlayerData.GetEquippedClass(player)
-	player:SetAttribute(EQUIPPED_ATTRIBUTE, classId)
+	player:SetAttribute(ClassConfig.EquippedAttribute, classId)
 
 	local template = rigTemplate(classId)
 	if not template then
