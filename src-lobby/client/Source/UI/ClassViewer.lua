@@ -42,9 +42,13 @@ local INTRO_INFO = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirecti
 -- Arrasto abaixo disso ainda conta como clique.
 local DRAG_THRESHOLD = 6
 
+-- Segundos de espera por um Rig que ainda não replicou.
+local RIG_TIMEOUT = 20
+
 local scene, rig, camPart, basePart
 local rigPosition, idleTrack
 local yaw, spin, lastYaw = 0, 0, 0
+local request = 0
 local savedType, savedCFrame, savedSubject, savedFov
 local dragging, dragMoved = false, false
 local dragStartX, dragStartY, lastX = 0, 0, 0
@@ -61,25 +65,6 @@ end
 local function characterFolder()
 	local client = ReplicatedStorage:WaitForChild("Client", 10)
 	return client and client:WaitForChild("Character", 10)
-end
-
--- O nome da pasta vem do ClassConfig; o place só entra com o modelo.
-local function rigTemplate(classId)
-	local entry = ClassConfig.Get(classId)
-	if not entry then
-		warn("[ClassViewer] Classe fora do ClassConfig: " .. tostring(classId))
-		return nil
-	end
-
-	local folder = characterFolder()
-	local source = folder and folder:FindFirstChild(entry.Rig)
-	local template = source and source:FindFirstChild("Rig")
-
-	if not template then
-		warn("[ClassViewer] Rig não encontrado em Character." .. entry.Rig)
-	end
-
-	return template
 end
 
 -- Meia altura no eixo Y do mundo. O Base está rotacionado, então Size.Y não serve.
@@ -135,19 +120,32 @@ local function stopIdle()
 	end
 end
 
-local function loadRig(classId)
-	stopIdle()
-
+local function focusPoint()
 	if rig then
-		rig:Destroy()
-		rig = nil
+		return rig:GetBoundingBox().Position
+	end
+	return basePart and basePart.Position or Vector3.zero
+end
+
+-- Rig que chega tarde reaponta a câmera; se a entrada ainda corre, ela só troca de alvo.
+local function aimCamera()
+	local camera = workspace.CurrentCamera
+	if not (camera and camPart) then
+		return
 	end
 
-	local template = rigTemplate(classId)
-	if not template then
-		return false
+	local goal = CFrame.lookAt(camPart.Position, focusPoint())
+
+	if introTween then
+		introTween:Cancel()
+		introTween = Motion.Tween(camera, INTRO_INFO, { CFrame = goal })
+		return
 	end
 
+	camera.CFrame = goal
+end
+
+local function placeRig(template)
 	rig = template:Clone()
 	for _, descendant in ipairs(rig:GetDescendants()) do
 		if descendant:IsA("BasePart") then
@@ -169,14 +167,58 @@ local function loadRig(classId)
 	end
 
 	playIdle()
-	return true
 end
 
-local function aimCamera()
-	local camera = workspace.CurrentCamera
-	if camera and rig and camPart then
-		camera.CFrame = CFrame.lookAt(camPart.Position, rig:GetBoundingBox().Position)
+-- O pacote Character é grande: logo depois do join a pasta existe e as classes dentro dela
+-- ainda não. Esperar aqui travaria a abertura do painel, então a cena abre sem rig e ele
+-- entra quando replicar.
+local function loadRig(classId)
+	stopIdle()
+
+	if rig then
+		rig:Destroy()
+		rig = nil
 	end
+
+	local entry = ClassConfig.Get(classId)
+	if not entry then
+		warn("[ClassViewer] Classe fora do ClassConfig: " .. tostring(classId))
+		return false
+	end
+
+	local folder = characterFolder()
+	if not folder then
+		warn("[ClassViewer] ReplicatedStorage.Client.Character não encontrado.")
+		return false
+	end
+
+	request += 1
+	local token = request
+
+	local source = folder:FindFirstChild(entry.Rig)
+	local template = source and source:FindFirstChild("Rig")
+
+	if template then
+		placeRig(template)
+		return true
+	end
+
+	task.spawn(function()
+		local classFolder = folder:WaitForChild(entry.Rig, RIG_TIMEOUT)
+		local model = classFolder and classFolder:WaitForChild("Rig", RIG_TIMEOUT)
+
+		if not model then
+			warn("[ClassViewer] Rig não encontrado em Character." .. entry.Rig)
+			return
+		end
+
+		if scene and request == token then
+			placeRig(model)
+			aimCamera()
+		end
+	end)
+
+	return true
 end
 
 function ClassViewer.Show(classId)
@@ -246,7 +288,7 @@ function ClassViewer.Open(classId, dragSource)
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.FieldOfView = VIEWER_FOV
 
-		local target = rig:GetBoundingBox().Position
+		local target = focusPoint()
 		local offset = camPart.Position - target
 		camera.CFrame = CFrame.lookAt(target + offset * INTRO_PULLBACK, target)
 		introTween = Motion.Tween(camera, INTRO_INFO, { CFrame = CFrame.lookAt(camPart.Position, target) })
