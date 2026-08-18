@@ -1,5 +1,5 @@
--- Animação das portas, local em cada cliente. O servidor só publica o ângulo alvo da folha; o
--- giro dela e da maçaneta é calculado aqui e não replica para ninguém.
+-- Animação das portas, local em cada cliente. O servidor só publica o quanto a porta está
+-- aberta; o giro das folhas e das maçanetas é calculado aqui e não replica para ninguém.
 local DoorController = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,8 +13,8 @@ local active = {}
 local stepConnection
 
 local function resolveKnob(model, hinge)
-	local part = model:FindFirstChild(DoorConfig.KnobName)
-	if not (part and part:IsA("BasePart")) then
+	local part = DoorConfig.KnobOf(model, hinge)
+	if not part then
 		return nil
 	end
 
@@ -38,38 +38,80 @@ local function resolveKnob(model, hinge)
 	}
 end
 
--- A folha só se move aqui, então o servidor sempre a devolve fechada: o que o streaming
--- trouxer de volta serve de referência.
-local function resolve(door)
-	local hinge = door.model:FindFirstChild(DoorConfig.HingeName)
-	if not (hinge and hinge:IsA("BasePart")) then
-		door.part = nil
+local function sameLeaves(door, hinges)
+	if not door.leaves or #door.leaves ~= #hinges then
 		return false
 	end
 
-	if door.part ~= hinge then
-		door.part = hinge
-		door.closed = hinge.CFrame
-		door.pivot = hinge:GetPivot().Position
-		door.knob = resolveKnob(door.model, hinge)
-		door.angle = 0
+	for index, hinge in ipairs(hinges) do
+		if door.leaves[index].part ~= hinge then
+			return false
+		end
 	end
 
 	return true
 end
 
-local function applyLeaf(door, angle)
-	local rotation = CFrame.new(door.pivot) * CFrame.Angles(0, math.rad(angle), 0) * CFrame.new(-door.pivot)
-	door.part.CFrame = rotation * door.closed
-	door.angle = angle
+-- As folhas só se movem aqui, então o servidor sempre as devolve fechadas: o que o streaming
+-- trouxer de volta serve de referência para a pose e para o sinal de cada folha.
+local function resolve(door)
+	local hinges = DoorConfig.Hinges(door.model)
+
+	if #hinges == 0 then
+		door.leaves = nil
+		return false
+	end
+
+	if sameLeaves(door, hinges) then
+		return true
+	end
+
+	local normal = DoorConfig.Normal(hinges)
+	local leaves, knob = {}, false
+
+	for index, hinge in ipairs(hinges) do
+		local leaf = {
+			part = hinge,
+			closed = hinge.CFrame,
+			pivot = hinge:GetPivot().Position,
+			sign = DoorConfig.LeafSign(hinge, normal),
+			knob = resolveKnob(door.model, hinge),
+		}
+
+		knob = knob or leaf.knob ~= nil
+		leaves[index] = leaf
+	end
+
+	door.leaves = leaves
+	door.hasKnob = knob
+	door.angle = 0
+
+	return true
 end
 
--- C0 vive no espaço do Root, então a folha pode estar em qualquer ângulo que a maçaneta gira
--- sempre sobre o próprio eixo.
-local function applyKnob(door, angle)
-	local knob = door.knob
-	local turn = CFrame.new(knob.pivot) * CFrame.fromAxisAngle(knob.axis, math.rad(angle)) * CFrame.new(-knob.pivot)
-	knob.joint.C0 = turn * knob.rest
+local function applyLeaves(door, state)
+	for _, leaf in ipairs(door.leaves) do
+		local angle = math.rad(leaf.sign * state)
+		local rotation = CFrame.new(leaf.pivot) * CFrame.Angles(0, angle, 0) * CFrame.new(-leaf.pivot)
+		leaf.part.CFrame = rotation * leaf.closed
+	end
+
+	door.angle = state
+end
+
+-- C0 vive no espaço da folha, então ela pode estar em qualquer ângulo que a maçaneta gira
+-- sempre sobre o próprio eixo. O ângulo é o mesmo para todas: folhas opostas já estão giradas
+-- entre si, e o espelho no mundo sai daí.
+local function applyKnobs(door, angle)
+	for _, leaf in ipairs(door.leaves) do
+		local knob = leaf.knob
+		if knob then
+			local turn = CFrame.new(knob.pivot)
+				* CFrame.fromAxisAngle(knob.axis, math.rad(angle))
+				* CFrame.new(-knob.pivot)
+			knob.joint.C0 = turn * knob.rest
+		end
+	end
 end
 
 local function knobAngle(door)
@@ -88,16 +130,16 @@ local function step(delta)
 
 		local leaf = door.duration > 0 and math.clamp((door.elapsed - door.lead) / door.duration, 0, 1) or 1
 		local eased = TweenService:GetValue(leaf, DoorConfig.Easing, DoorConfig.EasingDirection)
-		applyLeaf(door, door.from + (door.target - door.from) * eased)
+		applyLeaves(door, door.from + (door.target - door.from) * eased)
 
-		if door.knob then
-			applyKnob(door, knobAngle(door))
+		if door.hasKnob then
+			applyKnobs(door, knobAngle(door))
 		end
 
 		if door.elapsed >= door.total then
 			active[door] = nil
-			if door.knob then
-				applyKnob(door, 0)
+			if door.hasKnob then
+				applyKnobs(door, 0)
 			end
 		end
 	end
@@ -111,8 +153,8 @@ end
 local function play(door)
 	door.from = door.angle
 	door.elapsed = 0
-	door.lead = door.knob and DoorConfig.KnobTurn or 0
-	door.total = DoorConfig.Total(door.knob ~= nil, door.duration)
+	door.lead = door.hasKnob and DoorConfig.KnobTurn or 0
+	door.total = DoorConfig.Total(door.hasKnob, door.duration)
 	active[door] = true
 
 	if not stepConnection then
@@ -122,10 +164,10 @@ end
 
 local function snap(door)
 	active[door] = nil
-	applyLeaf(door, door.target)
+	applyLeaves(door, door.target)
 
-	if door.knob then
-		applyKnob(door, 0)
+	if door.hasKnob then
+		applyKnobs(door, 0)
 	end
 end
 
@@ -161,6 +203,7 @@ local function register(model)
 		elapsed = 0,
 		lead = 0,
 		total = 0,
+		hasKnob = false,
 		duration = DoorConfig.Swing(model),
 		knobAngle = DoorConfig.Number(model, "KnobAngle", DoorConfig.KnobAngle),
 	}
@@ -171,8 +214,9 @@ local function register(model)
 		setState(door, targetOf(model), true)
 	end)
 
+	-- Com streaming as folhas podem chegar depois do Model.
 	model.ChildAdded:Connect(function(child)
-		if child.Name == DoorConfig.HingeName or child.Name == DoorConfig.KnobName then
+		if child:IsA("BasePart") then
 			setState(door, targetOf(model), false)
 		end
 	end)
