@@ -16,8 +16,8 @@ local STORE_NAME = RunService:IsStudio() and "ALT_Data_Prisoners" or "Data_Priso
 -- Sem userdata (Vector3, Color3, CFrame, Instance): não serializa.
 -- Campo com prefixo Match pertence ao outro place; Reconcile não troca o tipo de chave existente.
 local TEMPLATE = {
-	Gold = 0,
-	Wins = 0,
+	Dima = 0,
+	Shifts = 0,
 	FirstJoin = 0,
 	LastSeen = 0,
 	Classes = {},
@@ -29,7 +29,7 @@ local Profiles = {}
 -- Atributo é o canal de leitura do cliente; Classes vai como lista separada por vírgula
 -- porque atributo não guarda tabela.
 local function publish(player, profile)
-	player:SetAttribute("Gold", profile.Data.Gold or 0)
+	player:SetAttribute("Dima", profile.Data.Dima or 0)
 	player:SetAttribute("OwnedClasses", table.concat(profile.Data.Classes or {}, ","))
 	player:SetAttribute("EquippedClass", profile.Data.EquippedClass or "")
 end
@@ -99,15 +99,15 @@ function PlayerData.Get(player)
 	return profile and profile.Data or nil
 end
 
-function PlayerData.GetGold(player)
+function PlayerData.GetDima(player)
 	local profile = Profiles[player]
-	return profile and profile.Data.Gold or 0
+	return profile and profile.Data.Dima or 0
 end
 
 -- false = não creditou. Checar antes de entregar o item da compra.
-function PlayerData.AddGold(player, amount)
+function PlayerData.AddDima(player, amount)
 	if not isSafeNumber(amount) then
-		warn("[PlayerData] AddGold recusado: valor inválido (" .. tostring(amount) .. ")")
+		warn("[PlayerData] AddDima recusado: valor inválido (" .. tostring(amount) .. ")")
 		return false
 	end
 
@@ -116,24 +116,24 @@ function PlayerData.AddGold(player, amount)
 		return false
 	end
 
-	profile.Data.Gold += amount
+	profile.Data.Dima += amount
 	publish(player, profile)
 	return true
 end
 
 -- false = não debitou, e nesse caso nada foi cobrado. Checar antes de entregar o item.
-function PlayerData.SpendGold(player, amount)
+function PlayerData.SpendDima(player, amount)
 	if not isSafeNumber(amount) or amount < 0 then
-		warn("[PlayerData] SpendGold recusado: valor inválido (" .. tostring(amount) .. ")")
+		warn("[PlayerData] SpendDima recusado: valor inválido (" .. tostring(amount) .. ")")
 		return false
 	end
 
 	local profile = Profiles[player]
-	if not profile or profile.Data.Gold < amount then
+	if not profile or profile.Data.Dima < amount then
 		return false
 	end
 
-	profile.Data.Gold -= amount
+	profile.Data.Dima -= amount
 	publish(player, profile)
 	return true
 end

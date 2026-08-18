@@ -1,5 +1,5 @@
 -- Persistência do jogador (Match). O schema é do Lobby.
--- Gold e Wins são campos compartilhados: gravar aqui é o handoff de volta.
+-- Dima e Shifts são campos compartilhados: gravar aqui é o handoff de volta.
 local PlayerData = {}
 
 local Players = game:GetService("Players")
@@ -89,7 +89,7 @@ function PlayerData.OwnsClass(player, classId)
 	return false
 end
 
-function PlayerData.AddWins(player, amount)
+function PlayerData.AddShifts(player, amount)
 	if not isSafeNumber(amount) or amount <= 0 then
 		return false
 	end
@@ -99,13 +99,13 @@ function PlayerData.AddWins(player, amount)
 		return false
 	end
 
-	profile.Data.Wins = (profile.Data.Wins or 0) + amount
+	profile.Data.Shifts = (profile.Data.Shifts or 0) + amount
 	return true
 end
 
-function PlayerData.AddGold(player, amount)
+function PlayerData.AddDima(player, amount)
 	if not isSafeNumber(amount) then
-		warn("[PlayerData] AddGold recusado: valor inválido (" .. tostring(amount) .. ")")
+		warn("[PlayerData] AddDima recusado: valor inválido (" .. tostring(amount) .. ")")
 		return false
 	end
 
@@ -114,7 +114,7 @@ function PlayerData.AddGold(player, amount)
 		return false
 	end
 
-	profile.Data.Gold = (profile.Data.Gold or 0) + amount
+	profile.Data.Dima = (profile.Data.Dima or 0) + amount
 	return true
 end
 

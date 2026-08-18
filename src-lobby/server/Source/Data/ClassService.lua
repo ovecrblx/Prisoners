@@ -21,7 +21,7 @@ local function buy(player, entry)
 	if PlayerData.OwnsClass(player, entry.Id) then
 		return
 	end
-	if not PlayerData.SpendGold(player, entry.Price) then
+	if not PlayerData.SpendDima(player, entry.Price) then
 		return
 	end
 

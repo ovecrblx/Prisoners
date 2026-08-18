@@ -1,4 +1,4 @@
--- Contador de diamante em MainGui.Frame_Dima.Dima.Value. Mostra o atributo Gold subindo
+-- Contador de diamante em MainGui.Frame_Dima.Dima.Value. Mostra o atributo Dima subindo
 -- até o valor novo, e cresce no eixo X conforme o número de dígitos: o texto é TextScaled,
 -- então sem isso o glifo encolhe em vez de a caixa acompanhar.
 local DimaCounter = {}
@@ -9,7 +9,7 @@ local TweenService = game:GetService("TweenService")
 
 local Motion = require(script.Parent:WaitForChild("Motion"))
 
-local ATTRIBUTE = "Gold"
+local ATTRIBUTE = "Dima"
 
 -- Largura por caractere, em escala X do Dima: 0.15 é o que o place usa para um dígito.
 local CHAR_SCALE = 0.15

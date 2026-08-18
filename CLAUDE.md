@@ -66,7 +66,7 @@ Falha é isolada por `pcall` e derruba `ServerScriptService.BootHealthy`.
 ### Perfil compartilhado entre os places
 
 Mesmo store e mesma key (`Player_<UserId>`): é o mesmo registro, um servidor de cada vez. Não é
-cópia sincronizada. Gravar `Wins`/`Gold` no Match já é o handoff de volta.
+cópia sincronizada. Gravar `Shifts`/`Dima` no Match já é o handoff de volta.
 
 `Reconcile` preenche chave faltante mas **nunca troca o tipo** de uma existente. Campo exclusivo do
 Match leva prefixo `Match`; campo compartilhado só existe com mesmo nome e mesmo tipo dos dois
