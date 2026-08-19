@@ -12,6 +12,13 @@ DoorConfig.KnobName = "Animate"
 DoorConfig.BlockName = "Collide"
 DoorConfig.DualPrefix = "Dual_Door"
 
+-- Cortina de metal: as folhas não giram, esticam para baixo. `Right Root` é a alavanca que
+-- as aciona, e as outras `<Lado> Root` do Model são as cortinas.
+DoorConfig.CurtainPrefix = "Curtain"
+DoorConfig.LeverName = "Right Root"
+DoorConfig.IndicatorName = "Indicator"
+DoorConfig.ClosedAttribute = "Closed"
+
 -- Estado publicado pelo servidor: módulo do ângulo com o sinal do lado de quem abriu, 0
 -- fechada. Cada folha deriva o próprio sinal, então porta dupla cabe numa escrita só.
 DoorConfig.StateAttribute = "Angle"
@@ -35,6 +42,32 @@ DoorConfig.ScanInterval = 0.2
 
 DoorConfig.Easing = Enum.EasingStyle.Quad
 DoorConfig.EasingDirection = Enum.EasingDirection.Out
+
+-- Alavanca: orientação em graus de cada estado, e a cor do Indicator que acompanha. Vira com
+-- passada, e a luz troca quando ela cruza o meio do curso.
+DoorConfig.LeverOff = Vector3.new(-45, 90, 90)
+DoorConfig.LeverOn = Vector3.new(-45, -90, -90)
+DoorConfig.IndicatorOff = Color3.fromRGB(255, 89, 89)
+DoorConfig.IndicatorOn = Color3.fromRGB(75, 151, 75)
+DoorConfig.LeverTime = 0.28
+DoorConfig.LeverStyle = Enum.EasingStyle.Back
+DoorConfig.LeverDirection = Enum.EasingDirection.Out
+DoorConfig.IndicatorSwitch = 0.45
+DoorConfig.IndicatorTime = 0.18
+
+-- Cortina: descer é chapa pesada batendo no chão, subir é motor puxando. Stagger em segundos
+-- entre uma cortina e a seguinte, para o par não andar colado.
+DoorConfig.CurtainCloseTime = 1.1
+DoorConfig.CurtainCloseStyle = Enum.EasingStyle.Bounce
+DoorConfig.CurtainCloseDirection = Enum.EasingDirection.Out
+DoorConfig.CurtainOpenTime = 0.9
+DoorConfig.CurtainOpenStyle = Enum.EasingStyle.Quint
+DoorConfig.CurtainOpenDirection = Enum.EasingDirection.InOut
+DoorConfig.CurtainStagger = 0.09
+
+-- Size.Y da cortina em cada estado. O topo fica parado; o que cresce é a barra para baixo.
+DoorConfig.CloseHeight = 3.85
+DoorConfig.OpenHeight = 1
 
 -- Style Custom: a engine não desenha nada, nem o fundo escuro atrás da tecla. Quem desenha é
 -- o PromptDisplay do cliente. Clicável só no toque: no PC o alvo de clique cobre o prompt
@@ -103,6 +136,25 @@ end
 function DoorConfig.LeafSign(hinge, normal)
 	local arm = hinge.Position - hinge:GetPivot().Position
 	return Vector3.new(0, 1, 0):Cross(arm):Dot(normal) >= 0 and -1 or 1
+end
+
+-- Cortinas do Model: as folhas que não são a alavanca. Ordem vem de Hinges, então o stagger
+-- cai sempre na mesma sequência.
+function DoorConfig.Curtains(model)
+	local parts = {}
+
+	for _, part in ipairs(DoorConfig.Hinges(model)) do
+		if part.Name ~= DoorConfig.LeverName then
+			parts[#parts + 1] = part
+		end
+	end
+
+	return parts
+end
+
+function DoorConfig.LeverPose(pivot, orientation)
+	local rotation = CFrame.fromOrientation(math.rad(orientation.X), math.rad(orientation.Y), math.rad(orientation.Z))
+	return CFrame.new(pivot) * rotation
 end
 
 function DoorConfig.SideOf(hinges, normal, position)

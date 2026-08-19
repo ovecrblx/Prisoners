@@ -128,6 +128,11 @@ local function scan(door)
 end
 
 local function register(model)
+	-- Cortina usa a mesma convenção de nome, mas estica em vez de girar: é do CurtainService.
+	if model.Name:sub(1, #DoorConfig.CurtainPrefix) == DoorConfig.CurtainPrefix then
+		return
+	end
+
 	local hinges = DoorConfig.Hinges(model)
 	if #hinges == 0 then
 		return
