@@ -41,10 +41,12 @@ local BUTTON_W = 88
 local BUTTON_GAP = 6
 local ROW_GAP = 6
 local BODY_PAD = 10
-local TYPES_PER_ROW = 3
-local BODY_W = BUTTON_W * TYPES_PER_ROW + BUTTON_GAP * (TYPES_PER_ROW - 1)
+local BODY_COLUMNS = 3
+local BODY_W = BUTTON_W * BODY_COLUMNS + BUTTON_GAP * (BODY_COLUMNS - 1)
 local WINDOW_W = BODY_W + BODY_PAD * 2
-local WINDOW_H = 320
+-- Altura que cabe TODAS as linhas sem rolar, com a de escuta aberta: linha empurrada para o scroll
+-- some da vista, e a barra tem 4px.
+local WINDOW_H = 376
 local WINDOW_MIN = Vector2.new(WINDOW_W, 140)
 local WINDOW_MAX = Vector2.new(760, 900)
 
@@ -66,6 +68,7 @@ local moveChain = 0
 local refreshBuilderLabels: () -> () = function() end
 local areaTargetId: string? = nil
 local refreshSenseControl: () -> () = function() end
+local refreshClassControl: () -> () = function() end
 
 local function setStatus(text: string)
 	if statusLabel then
@@ -306,6 +309,7 @@ local function setMode(newMode: Mode)
 		button.BackgroundColor3 = if active then tint else PanelTheme.Color.Surface
 		button.TextColor3 = if active then PanelTheme.Color.TextInk else tint
 	end
+	refreshClassControl()
 	if newMode == "None" then
 		setStatus("")
 	end
@@ -1186,7 +1190,7 @@ local function buildGui()
 	column.Padding = UDim.new(0, ROW_GAP)
 	column.Parent = body
 
-	-- Contador: a linha de tipos é derivada e pode ocupar várias, então nenhum LayoutOrder é fixo.
+	-- Contador: as seções são derivadas, então nenhum LayoutOrder é fixo.
 	local orderCounter = 0
 	local function nextOrder(): number
 		orderCounter += 1
@@ -1217,21 +1221,69 @@ local function buildGui()
 		return row
 	end
 
-	-- Um botão por RouteType, na cor de NpcConfig.NODE_COLORS: rede nova aparece sozinha aqui.
+	-- Uma linha por RouteType na lista, na cor de NpcConfig.NODE_COLORS: rede nova aparece sozinha
+	-- aqui e a janela não cresce por causa dela.
 	sectionLabel("COLOCAR NÓ", nextOrder())
-	local typesRow: Frame? = nil
-	for index, routeType in ipairs(routeTypeOrder()) do
-		if (index - 1) % TYPES_PER_ROW == 0 then
-			typesRow = makeRow(nextOrder())
-		end
+	local classRow = makeRow(nextOrder())
+	local classLabel = PanelTheme.Text(classRow, "Cap_Classe", 9, Enum.Font.GothamBold, PanelTheme.Color.TextDim)
+	classLabel.LayoutOrder = 1
+	classLabel.Size = UDim2.fromOffset(140, metrics.BUTTON_H)
+	classLabel:SetAttribute("Flex", true)
+	local classButton = makeButton(classRow, "NODE CLASS", 2, nil, BUTTON_W)
+
+	local classTypes = routeTypeOrder()
+	local CLASS_PANEL_W = 230
+	local CLASS_PANEL_H = #classTypes * PanelTheme.SLOT_ROW_STRIDE + 26
+	local classPanel, classScroll = PanelTheme.SlotPanel(window, "CLASSE DO NÓ", CLASS_PANEL_W, CLASS_PANEL_H)
+	classPanel.AnchorPoint = Vector2.new(1, 1)
+	classPanel.Position = UDim2.new(1, -BODY_PAD, 1, -8) -- o Y real vem de placeClassPanel()
+
+	-- Abre PARA BAIXO: o botão mora no topo do corpo. A lista de slots abre para cima, e as duas
+	-- nunca ficam abertas juntas.
+	local function placeClassPanel()
+		local top = classButton.AbsolutePosition.Y - window.AbsolutePosition.Y
+		local bottom = top + metrics.BUTTON_H + PanelTheme.SlotPanelGap() + CLASS_PANEL_H
+		local floor = window.AbsoluteSize.Y - 8
+		local ceiling = math.min(metrics.TITLE_H + 4 + CLASS_PANEL_H, floor)
+		classPanel.Position = UDim2.new(1, -BODY_PAD, 0, math.clamp(bottom, ceiling, floor))
+	end
+	body:GetPropertyChangedSignal("CanvasPosition"):Connect(placeClassPanel)
+	window:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeClassPanel)
+
+	for index, routeType in ipairs(classTypes) do
 		local tint = NpcConfig.NODE_COLORS[routeType] or PanelTheme.Color.Accent
-		local button = makeButton(typesRow :: Frame, typeLabel(routeType), index, tint)
-		modeButtons[routeType] = button
+		local _row, pick, del = PanelTheme.SlotRow(classScroll, typeLabel(routeType), index)
+		del.Visible = false
+		pick.TextColor3 = tint -- a pintura de setMode só chega no primeiro modo escolhido
+		modeButtons[routeType] = pick
 		modeTints[routeType] = tint
-		button.MouseButton1Click:Connect(function()
+		pick.Activated:Connect(function()
 			setMode(if mode == routeType then "None" else routeType)
+			classPanel.Visible = false
 		end)
 	end
+	classScroll.CanvasSize = UDim2.fromOffset(0, #classTypes * PanelTheme.SLOT_ROW_STRIDE)
+
+	-- Atribuída lá embaixo, quando slotPanel existir.
+	local hideSlotPanel: () -> () = function() end
+
+	classButton.MouseButton1Click:Connect(function()
+		classPanel.Visible = not classPanel.Visible
+		if classPanel.Visible then
+			hideSlotPanel()
+			placeClassPanel()
+		end
+	end)
+
+	refreshClassControl = function()
+		local active = RouteData.IsValidType(mode)
+		local tint = modeTints[mode] or PanelTheme.Color.Accent
+		classLabel.Text = if active then typeLabel(mode) else "nenhuma rede"
+		classLabel.TextColor3 = if active then tint else PanelTheme.Color.TextDim
+		classButton.BackgroundColor3 = if active then tint else PanelTheme.Color.Surface
+		classButton.TextColor3 = if active then PanelTheme.Color.TextInk else PanelTheme.Color.Accent
+	end
+	refreshClassControl()
 
 	local function stepperRow(order: number, caption: string, onLess: () -> (), onMore: () -> ()): TextLabel
 		local row = makeRow(order)
@@ -1415,6 +1467,11 @@ local function buildGui()
 
 	local slotConfirm, askSlotConfirm = PanelTheme.ConfirmBox(slotPanel)
 
+	hideSlotPanel = function()
+		slotPanel.Visible = false
+		slotConfirm.Visible = false
+	end
+
 	local function adoptFrom(payload: { [string]: any }, described: string)
 		setStatus("carregando…")
 		slotPanel.Visible = false
@@ -1505,6 +1562,7 @@ local function buildGui()
 	slotsButton.MouseButton1Click:Connect(function()
 		slotPanel.Visible = not slotPanel.Visible
 		if slotPanel.Visible then
+			classPanel.Visible = false
 			placeSlotPanel()
 			refreshSlots()
 		else
@@ -1566,8 +1624,8 @@ local function buildGui()
 		PanelTheme.SetLauncherActive(toggle, open)
 		if not open then
 			setMode("None")
-			slotPanel.Visible = false
-			slotConfirm.Visible = false
+			classPanel.Visible = false
+			hideSlotPanel()
 		else
 			syncCurrentName()
 		end
