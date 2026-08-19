@@ -25,6 +25,11 @@ $RECYCLE.BIN/
 *~
 .claude/
 
+# Arte-fonte
+# Textura e projeto do Affinity: sobem para o Roblox como decal, e nada aqui os lê.
+# O .af sozinho passa de 75MB, e blob em git não sai do histórico depois.
+decals/
+
 # Logs
 *.log
 logs/
