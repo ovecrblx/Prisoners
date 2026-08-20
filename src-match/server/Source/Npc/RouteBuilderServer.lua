@@ -710,6 +710,9 @@ function RouteBuilderServer.Init()
 			local violation = RouteStorage.CapViolation(workingGraph)
 			if violation then
 				applyUndo()
+				-- Republicar é obrigatório: sem isto o runtime fica com a edição recusada.
+				publish()
+				pushVisuals()
 				warn(string.format(
 					"[RouteBuilder] op %s de %s desfeita: %s", payload.op, player.Name, violation))
 				pushStats(violation)
