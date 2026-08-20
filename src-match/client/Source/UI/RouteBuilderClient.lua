@@ -329,24 +329,31 @@ local function aimRay(input: InputObject?): Ray?
 	return player:GetMouse().UnitRay
 end
 
-local function raycastGround(input: InputObject?): RaycastResult?
-	local ray = aimRay(input)
-	if not ray then
-		return nil
-	end
+-- Nem o desenho nem corpo de NPC são chão: nó autorado em cima deles ficaria onde o NPC parou.
+local function worldRayParams(): RaycastParams
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	local exclude: { Instance } = {}
 	if player.Character then
 		table.insert(exclude, player.Character :: Model)
 	end
-	local folder = Workspace:FindFirstChild(NpcConfig.NODE_FOLDER_NAME)
-	if folder then
-		table.insert(exclude, folder)
+	for _, name in ipairs({ NpcConfig.NODE_FOLDER_NAME, NpcConfig.BODY_FOLDER }) do
+		local folder = Workspace:FindFirstChild(name)
+		if folder then
+			table.insert(exclude, folder)
+		end
 	end
 	params.FilterDescendantsInstances = exclude
 	params.RespectCanCollide = true
-	return Workspace:Raycast(ray.Origin, ray.Direction * PLACE_RANGE, params)
+	return params
+end
+
+local function raycastGround(input: InputObject?): RaycastResult?
+	local ray = aimRay(input)
+	if not ray then
+		return nil
+	end
+	return Workspace:Raycast(ray.Origin, ray.Direction * PLACE_RANGE, worldRayParams())
 end
 
 -- Nó mais próximo da reta da mira; o filtro por tipo entra NA BUSCA, nunca depois de escolher.
@@ -687,18 +694,7 @@ local function pickSnapNode(input: InputObject?): (string?, Vector3?, string?)
 end
 
 local function groundBelow(position: Vector3): Vector3?
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local exclude: { Instance } = {}
-	if player.Character then
-		table.insert(exclude, player.Character :: Model)
-	end
-	local folder = Workspace:FindFirstChild(NpcConfig.NODE_FOLDER_NAME)
-	if folder then
-		table.insert(exclude, folder)
-	end
-	params.FilterDescendantsInstances = exclude
-	params.RespectCanCollide = true
+	local params = worldRayParams()
 	local origin = position + Vector3.new(0, PROBE_UP, 0)
 	local hit = Workspace:Raycast(origin, Vector3.new(0, -(PROBE_UP + PROBE_DOWN), 0), params)
 	return if hit then hit.Position else nil
