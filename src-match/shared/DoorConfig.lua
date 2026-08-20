@@ -40,6 +40,11 @@ DoorConfig.OpenRadius = 12
 DoorConfig.CloseRadius = 16
 DoorConfig.ScanInterval = 0.2
 
+-- Porta de prompt aberta por NPC: ele não aperta botão, então a aproximação dele vale por um.
+-- Raio menor que o de cima porque aqui abrir cedo demais entrega a sala antes de alguém chegar.
+DoorConfig.NpcOpenRadius = 7
+DoorConfig.NpcCloseRadius = 11
+
 DoorConfig.Easing = Enum.EasingStyle.Quad
 DoorConfig.EasingDirection = Enum.EasingDirection.Out
 

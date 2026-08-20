@@ -11,6 +11,10 @@ local CollisionService = require(script.Parent:WaitForChild("CollisionService"))
 
 local nearDoors = {}
 
+-- Corpos que abrem porta sem apertar nada. A porta não sabe o que é um NPC: sabe que alguém se
+-- aproxima. Quem entra aqui é quem não tem prompt para usar.
+local watched = {}
+
 local function setBlocking(door, blocking)
 	for _, leaf in ipairs(door.solid) do
 		if leaf.collide then
@@ -79,6 +83,7 @@ local function buildPrompt(door, parent)
 		end
 
 		door.readyAt = os.clock() + door.cycle
+		door.auto = false
 
 		if door.state ~= 0 then
 			setState(door, 0)
@@ -91,18 +96,34 @@ local function buildPrompt(door, parent)
 	end)
 end
 
-local function nearest(door)
+local function closer(closest, best, root, center)
+	local distance = (root.Position - center).Magnitude
+	if not best or distance < best then
+		return root, distance
+	end
+	return closest, best
+end
+
+-- Porta de prompt só conta corpo registrado: o jogador abre apertando, e uma porta que ele abriu
+-- de propósito não pode fechar porque ninguém passou perto.
+local function nearest(door, includePlayers)
 	local closest, best
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-
-		if root then
-			local distance = (root.Position - door.center).Magnitude
-			if not best or distance < best then
-				closest, best = root, distance
+	if includePlayers then
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				closest, best = closer(closest, best, root, door.center)
 			end
+		end
+	end
+
+	for root in pairs(watched) do
+		if root.Parent then
+			closest, best = closer(closest, best, root, door.center)
+		else
+			watched[root] = nil
 		end
 	end
 
@@ -114,14 +135,17 @@ local function scan(door)
 		return
 	end
 
-	local root, distance = nearest(door)
+	local root, distance = nearest(door, door.dual)
+	local openRadius = if door.dual then DoorConfig.OpenRadius else DoorConfig.NpcOpenRadius
+	local closeRadius = if door.dual then DoorConfig.CloseRadius else DoorConfig.NpcCloseRadius
 
 	if door.state == 0 then
-		if root and distance <= DoorConfig.OpenRadius then
+		if root and distance <= openRadius then
 			door.readyAt = os.clock() + door.cycle
+			door.auto = true
 			openFrom(door, root.Position)
 		end
-	elseif not root or distance > DoorConfig.CloseRadius then
+	elseif door.auto and (not root or distance > closeRadius) then
 		door.readyAt = os.clock() + door.cycle
 		setState(door, 0)
 	end
@@ -162,6 +186,9 @@ local function register(model)
 		state = 0,
 		token = 0,
 		readyAt = 0,
+		dual = model.Name:sub(1, #DoorConfig.DualPrefix) == DoorConfig.DualPrefix,
+		-- Aberta pela varredura, e não por alguém que apertou: só essa a varredura fecha.
+		auto = false,
 		cycle = DoorConfig.Total(knob ~= nil, DoorConfig.Swing(model)),
 		openAngle = math.abs(DoorConfig.Number(model, "OpenAngle", DoorConfig.OpenAngle)),
 		autoClose = math.max(DoorConfig.Number(model, "AutoClose", DoorConfig.AutoClose), 0),
@@ -169,11 +196,21 @@ local function register(model)
 
 	model:SetAttribute(DoorConfig.StateAttribute, 0)
 
-	if model.Name:sub(1, #DoorConfig.DualPrefix) == DoorConfig.DualPrefix then
-		nearDoors[#nearDoors + 1] = door
-	else
+	-- Toda porta entra na varredura: a de prompt porque o NPC não aperta botão.
+	nearDoors[#nearDoors + 1] = door
+
+	if not door.dual then
 		buildPrompt(door, knob or hinges[1])
 	end
+end
+
+-- Registra um corpo que abre porta por aproximação. Parte destruída sai sozinha na varredura.
+function DoorService.Watch(root)
+	watched[root] = true
+end
+
+function DoorService.Unwatch(root)
+	watched[root] = nil
 end
 
 function DoorService.Start()
@@ -201,7 +238,11 @@ function DoorService.Start()
 		while true do
 			task.wait(DoorConfig.ScanInterval)
 			for _, door in ipairs(nearDoors) do
-				scan(door)
+				-- `auto` mantém a porta na varredura mesmo sem ninguém registrado: senão a que a
+				-- varredura abriu ficaria aberta para sempre quando o último corpo sumisse.
+				if door.dual or door.auto or next(watched) ~= nil then
+					scan(door)
+				end
 			end
 		end
 	end)
