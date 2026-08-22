@@ -80,6 +80,14 @@ local ACTIVE_RADIUS = 140
 local cams = {}
 local watchers = {}
 local driver = nil
+
+-- Quem assiste os feeds mantém TODAS as câmeras calculando, longe do olho ou não: a vista do posto
+-- fica na cabine, a milhares de studs do mapa, e o critério de distância mandaria todas dormirem.
+local forced = false
+
+function SecCamController.KeepAwake(state)
+	forced = state == true
+end
 local sinceTarget = 0
 
 -- O cenário é publicado à mão e a caixa do nome não tem cobertura de teste.
@@ -270,6 +278,22 @@ local function updateLed(entry, now)
 	end
 end
 
+-- Uma lâmpada avulsa com a cadência das câmeras: devolve o passo dela, para chamar por quadro. É o
+-- que deixa outro painel piscar no mesmo ritmo sem copiar daqui a paleta nem os tempos.
+function SecCamController.Lamp(part, now)
+	local entry = {
+		led = part,
+		tracking = false,
+		blinkAt = now + math.random() * BLINK_IDLE_MAX,
+		litUntil = 0,
+		queued = 0,
+		ledLevel = -1,
+	}
+	return function(clock)
+		updateLed(entry, clock)
+	end
+end
+
 -- Uma chamada de movimento por câmera em vez de uma escrita por peça, e no modo que dispara só o
 -- sinal de CFrame. `jitter` desligado é o pouso exato no alvo, sem tremor.
 local function applyPose(entry, now, jitter)
@@ -325,7 +349,7 @@ local function step(delta)
 		else
 			-- Longe do olho do jogador ninguém vê a cabeça mexer, então ela nem é calculada.
 			if retarget then
-				entry.awake = viewer == nil or (entry.base.Position - viewer).Magnitude <= ACTIVE_RADIUS
+				entry.awake = forced or viewer == nil or (entry.base.Position - viewer).Magnitude <= ACTIVE_RADIUS
 				if entry.awake then
 					updateGoal(entry, now)
 				end
