@@ -8,6 +8,9 @@ local Workspace = game:GetService("Workspace")
 
 local SecCamController = {}
 
+-- Atributo em que o brilho da lâmpada (0 a 1) é publicado, para quem espelha o ritmo dela.
+SecCamController.LampAttribute = "SecCamLamp"
+
 -- Caminho a partir do workspace e o nome que um modelo de câmera tem que ter.
 local FOLDER = { "Siland_Home", "interactive" }
 local MODEL_PATTERN = "^Sec_Cam_?%d*$"
@@ -49,12 +52,15 @@ local PATROL_ARC = 0.8
 local PATROL_DWELL_MIN, PATROL_DWELL_MAX = 2, 4.5
 local PATROL_TILT = math.rad(-12)
 
--- LED: s entre piscadas varrendo e seguindo alguém, s aceso, e a chance de sair dupla.
+-- LED: s entre rajadas varrendo e seguindo alguém, e s aceso em cada piscada.
 local LED_NAME = "Led"
 local BLINK_IDLE_MIN, BLINK_IDLE_MAX = 2.5, 4.5
 local BLINK_BUSY_MIN, BLINK_BUSY_MAX = 0.8, 1.4
 local BLINK_ON = 0.12
-local BLINK_DOUBLE = 0.2
+
+-- A piscada vem em rajada: quantas a rajada tem, sorteadas, e o intervalo curto entre elas.
+local BLINK_BURST_MIN, BLINK_BURST_MAX = 1, 3
+local BLINK_GAP = BLINK_ON * 2.2
 
 -- 1/s com que a brasa do neon apaga depois da piscada.
 local BLINK_FADE = 6
@@ -242,15 +248,15 @@ local function updateLed(entry, now)
 
 	if now >= entry.blinkAt then
 		entry.litUntil = now + BLINK_ON
+
+		-- Dentro da rajada gasta o que falta; fora dela sorteia o tamanho da próxima. A pausa longa
+		-- só volta quando a rajada acaba, senão duas piscadas seguidas viravam duas rajadas.
 		if entry.queued > 0 then
 			entry.queued -= 1
-			entry.blinkAt = now + blinkSpan(entry)
-		elseif math.random() < BLINK_DOUBLE then
-			entry.queued = 1
-			entry.blinkAt = now + BLINK_ON * 2.2
 		else
-			entry.blinkAt = now + blinkSpan(entry)
+			entry.queued = math.random(BLINK_BURST_MIN, BLINK_BURST_MAX) - 1
 		end
+		entry.blinkAt = now + (if entry.queued > 0 then BLINK_GAP else blinkSpan(entry))
 	end
 
 	-- Neon só é reescrito quando o brilho muda: parada e apagada, a câmera não escreve nada.
@@ -258,6 +264,9 @@ local function updateLed(entry, now)
 	if math.abs(level - entry.ledLevel) > 0.01 then
 		entry.ledLevel = level
 		led.Color = LED_DIM:Lerp(LED_LIT, level)
+		-- Publica o brilho junto da cor: quem quiser o RITMO da lâmpada lê daqui em vez de tentar
+		-- decodificar a cor, o que só funcionaria copiando a paleta deste módulo.
+		led:SetAttribute(SecCamController.LampAttribute, level)
 	end
 end
 

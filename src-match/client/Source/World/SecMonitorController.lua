@@ -8,6 +8,8 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local DoorConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("DoorConfig"))
+-- Só pelo contrato da lâmpada: o nome do atributo mora no módulo que o publica.
+local SecCamController = require(script.Parent:WaitForChild("SecCamController"))
 
 local SecMonitorController = {}
 
@@ -20,6 +22,17 @@ local CAM_PREFIX = "Sec_Cam_"
 local HEAD_NAME = "Head"
 local HEAD_MESH = "rbxassetid://86032184172019"
 local LED_NAME = "Led"
+local REC_NAME = "REC"
+
+-- Painel aceso na cor autorada e apagado no pulso: quanto do caminho até o preto o apagado desce.
+local LAMP_DIM = 0.82
+local BLACK = Color3.new(0, 0, 0)
+local LAMP_ATTRIBUTE = SecCamController.LampAttribute
+
+-- Chiado analógico do Vfx: o TileSize em Y salta até esta fração da base, no intervalo sorteado.
+local VFX_NAME = "Vfx"
+local VFX_SWING = 0.3
+local VFX_MIN, VFX_MAX = 0.05, 0.18
 
 -- Onde o operador senta, de onde ele olha, e o gatilho que o leva até lá. Só quem está NESTE
 -- assento vê os feeds.
@@ -310,6 +323,18 @@ local function deactivate()
 	for _, slot in ipairs(slots) do
 		clearScene(slot)
 		clearFigures(slot)
+		-- Tudo volta à base autorada: a tela decorativa não fica congelada num salto do chiado nem
+		-- com a lâmpada apagada no meio de uma piscada.
+		if slot.vfx and slot.vfxBase then
+			slot.vfx.TileSize = slot.vfxBase
+		end
+		if slot.led and slot.ledBase then
+			slot.led.ImageColor3 = slot.ledBase
+		end
+		if slot.rec and slot.recBase then
+			slot.rec.TextColor3 = slot.recBase
+		end
+		slot.lampColor = nil
 	end
 end
 
@@ -388,24 +413,39 @@ local function step(delta)
 		end
 
 		evaluate()
-
-		-- O LED do slot espelha o da câmera de verdade, sem os dois módulos se conhecerem.
-		if live then
-			for _, slot in ipairs(slots) do
-				if slot.ledPart and slot.led then
-					slot.led.ImageColor3 = slot.ledPart.Color
-				end
-			end
-		end
 	end
 
 	if not live then
 		return
 	end
 
-	-- A cena é estática; quem se move é a câmera do feed, colada na cabeça que gira.
+	-- A cena é estática; quem se move é a câmera do feed, colada na cabeça que gira. O chiado salta
+	-- o TileSize do Vfx dentro da faixa, cada tela no próprio ritmo — em sincronia leria como UMA
+	-- interferência, não como quatro monitores velhos.
+	local now = os.clock()
 	for _, slot in ipairs(slots) do
 		slot.camera.CFrame = slot.head.CFrame
+
+		-- Led e REC seguem o ritmo da lâmpada da câmera, INVERTIDO: ficam acesos na cor autorada e
+		-- apagam no instante em que ela acende. Por QUADRO e só na mudança — a piscada dura 0,12s, e
+		-- amostrar a cada meio segundo dava um ritmo que a câmera não tem.
+		local shown = 1 - (slot.ledPart and slot.ledPart:GetAttribute(LAMP_ATTRIBUTE) or 0)
+		if shown ~= slot.lampLevel then
+			slot.lampLevel = shown
+			if slot.led then
+				slot.led.ImageColor3 = slot.ledDark:Lerp(slot.ledBase, shown)
+			end
+			if slot.rec then
+				slot.rec.TextColor3 = slot.recDark:Lerp(slot.recBase, shown)
+			end
+		end
+
+		if slot.vfx and now >= slot.vfxAt then
+			slot.vfxAt = now + VFX_MIN + math.random() * (VFX_MAX - VFX_MIN)
+			local swing = 1 + (math.random() * 2 - 1) * VFX_SWING
+			local base = slot.vfxBase
+			slot.vfx.TileSize = UDim2.new(base.X.Scale, base.X.Offset, base.Y.Scale * swing, base.Y.Offset * swing)
+		end
 	end
 
 	sinceFigure += delta
@@ -478,14 +518,25 @@ local function attach(index, panel)
 		value.Text = "CAM " .. index
 	end
 
+	local vfx = panel:FindFirstChild(VFX_NAME)
+	local led = panel:FindFirstChild(LED_NAME)
+	local rec = panel:FindFirstChild(REC_NAME)
 	local slot = {
 		index = index,
 		panel = panel,
 		viewport = viewport,
 		camera = camera,
 		head = head,
-		led = panel:FindFirstChild(LED_NAME),
+		led = led,
+		rec = rec,
+		ledBase = led and led.ImageColor3,
+		recBase = rec and rec.TextColor3,
+		ledDark = led and led.ImageColor3:Lerp(BLACK, LAMP_DIM),
+		recDark = rec and rec.TextColor3:Lerp(BLACK, LAMP_DIM),
 		ledPart = model:FindFirstChild(LED_NAME, true),
+		vfx = vfx,
+		vfxBase = vfx and vfx.TileSize,
+		vfxAt = 0,
 		figures = {},
 	}
 	table.insert(slots, slot)
