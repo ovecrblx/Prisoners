@@ -1,6 +1,6 @@
 --!strict
 -- Estado das janelas das ferramentas de autoria, por jogador: quais abas ficaram abertas, o tamanho
--- e a posição de cada janela, e os perfis de arranjo de cards.
+-- e a posição de cada janela, os perfis de arranjo de cards e o que reabrir de cada um.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -28,10 +28,11 @@ local TOOL_KEYS: { [string]: boolean } = {
 	brain = true,
 }
 
--- Tetos do registro: perfis por ferramenta, cards por perfil e tamanho do nome.
+-- Tetos do registro: perfis por ferramenta, cards por perfil, tamanho do nome e do id de NPC.
 local MAX_PROFILES = 8
 local MAX_CARDS = 240
 local NAME_MAX = 24
+local ID_MAX = 64
 
 -- px; faixa de sanidade da geometria vinda do cliente.
 local GEOM_MIN, GEOM_MAX = -8000, 8000
@@ -40,10 +41,22 @@ local GEOM_MIN, GEOM_MAX = -8000, 8000
 local WRITE_GAP = 5
 
 type Point = { x: number, y: number }
+
+-- Caixa da janela: x/y/w/h sempre; escala e pan só quando a ferramenta os guarda.
+type Geom = { [string]: number? }
+
+-- Um desenho salvo: onde ficou cada card, e com que escala o autor o arrumou.
+type Profile = { cards: { [string]: Point }, zoom: number? }
+
+-- Marcas por ferramenta: `first` é o arranjo padrão (o primeiro que o autor criou), `last` o
+-- reaberto, e `npc` o sujeito da última sessão.
+type Mark = { first: string?, last: string?, npc: string? }
+
 type Record = {
 	dock: { [string]: boolean },
-	geom: { [string]: { [string]: number } },
-	layouts: { [string]: { [string]: { [string]: Point } } },
+	geom: { [string]: Geom },
+	layouts: { [string]: { [string]: Profile } },
+	marks: { [string]: Mark },
 }
 
 local store: SlotStorage.Store? = nil
@@ -76,6 +89,13 @@ local function number(value: any): number?
 	return math.clamp(value, GEOM_MIN, GEOM_MAX)
 end
 
+local function text(value: any, limit: number): string?
+	if type(value) ~= "string" or #value == 0 or #value > limit then
+		return nil
+	end
+	return value
+end
+
 local function pruneDock(raw: any): { [string]: boolean }
 	local dock: { [string]: boolean } = {}
 	if type(raw) ~= "table" then
@@ -89,8 +109,8 @@ local function pruneDock(raw: any): { [string]: boolean }
 	return dock
 end
 
-local function pruneGeom(raw: any): { [string]: { [string]: number } }
-	local geom: { [string]: { [string]: number } } = {}
+local function pruneGeom(raw: any): { [string]: Geom }
+	local geom: { [string]: Geom } = {}
 	if type(raw) ~= "table" then
 		return geom
 	end
@@ -99,7 +119,13 @@ local function pruneGeom(raw: any): { [string]: { [string]: number } }
 			local x, y = number(box.x), number(box.y)
 			local w, h = number(box.w), number(box.h)
 			if x and y and w and h then
-				geom[tool] = { x = x, y = y, w = w, h = h }
+				-- Escala e pan viajam com a JANELA, não com o desenho: carregar um arranjo salvo em
+				-- outro monitor não pode reescalar a ferramenta de quem só queria os cards de volta.
+				local kept: Geom = { x = x, y = y, w = w, h = h }
+				kept.zoom = number(box.zoom)
+				kept.px = number(box.px)
+				kept.py = number(box.py)
+				geom[tool] = kept
 			end
 		end
 	end
@@ -127,20 +153,23 @@ local function pruneCards(raw: any): { [string]: Point }?
 	return if count > 0 then cards else nil
 end
 
-local function pruneLayouts(raw: any): { [string]: { [string]: { [string]: Point } } }
-	local layouts: { [string]: { [string]: { [string]: Point } } } = {}
+local function pruneLayouts(raw: any): { [string]: { [string]: Profile } }
+	local layouts: { [string]: { [string]: Profile } } = {}
 	if type(raw) ~= "table" then
 		return layouts
 	end
 	for tool, profiles in pairs(raw) do
 		if TOOL_KEYS[tool] and type(profiles) == "table" then
-			local kept: { [string]: { [string]: Point } } = {}
+			local kept: { [string]: Profile } = {}
 			local count = 0
-			for name, cards in pairs(profiles) do
+			for name, entry in pairs(profiles) do
 				if count < MAX_PROFILES and type(name) == "string" and #name > 0 and #name <= NAME_MAX then
-					local pruned = pruneCards(cards)
+					-- Registro anterior à escala guardava o mapa de cards direto; ler as duas formas
+					-- é o que impede um desenho salvo antes de sumir na primeira carga.
+					local boxed = type(entry) == "table" and entry.cards ~= nil
+					local pruned = pruneCards(if boxed then entry.cards else entry)
 					if pruned then
-						kept[name] = pruned
+						kept[name] = { cards = pruned, zoom = if boxed then number(entry.zoom) else nil }
 						count += 1
 					end
 				end
@@ -149,6 +178,32 @@ local function pruneLayouts(raw: any): { [string]: { [string]: { [string]: Point
 		end
 	end
 	return layouts
+end
+
+local function pruneMarks(raw: any): { [string]: Mark }
+	local marks: { [string]: Mark } = {}
+	if type(raw) ~= "table" then
+		return marks
+	end
+	for tool, mark in pairs(raw) do
+		if TOOL_KEYS[tool] and type(mark) == "table" then
+			marks[tool] = {
+				first = text(mark.first, NAME_MAX),
+				last = text(mark.last, NAME_MAX),
+				npc = text(mark.npc, ID_MAX),
+			}
+		end
+	end
+	return marks
+end
+
+local function markOf(record: Record, tool: string): Mark
+	local mark = record.marks[tool]
+	if not mark then
+		mark = {}
+		record.marks[tool] = mark
+	end
+	return mark
 end
 
 local function load(player: Player): Record
@@ -163,6 +218,7 @@ local function load(player: Player): Record
 		dock = pruneDock(source.dock),
 		geom = pruneGeom(source.geom),
 		layouts = pruneLayouts(source.layouts),
+		marks = pruneMarks(source.marks),
 	}
 	cache[player.UserId] = record
 	return record
@@ -217,10 +273,24 @@ local function onInvoke(player: Player, action: any, name: any, payload: any): a
 		end
 		table.sort(names)
 		return { ok = true, names = names }
+	elseif action == "mark_get" then
+		return { ok = true, mark = if TOOL_KEYS[name] then record.marks[name] or {} else {} }
+	elseif action == "npc_set" then
+		if TOOL_KEYS[name] then
+			markOf(record, name).npc = text(payload, ID_MAX)
+			save(player, record)
+		end
+		return { ok = true }
 	elseif action == "layout_load" then
 		local profiles = record.layouts[name]
-		local cards = profiles and profiles[tostring(payload)]
-		return { ok = cards ~= nil, cards = cards }
+		local profile = tostring(payload)
+		local entry = profiles and profiles[profile]
+		-- Carregar é MARCAR: é o que faz a janela reabrir no arranjo que o autor escolheu por último.
+		if entry and TOOL_KEYS[name] then
+			markOf(record, name).last = text(profile, NAME_MAX)
+			save(player, record)
+		end
+		return { ok = entry ~= nil, cards = entry and entry.cards, zoom = entry and entry.zoom }
 	elseif action == "layout_save" then
 		if not TOOL_KEYS[name] or type(payload) ~= "table" then
 			return { ok = false }
@@ -240,14 +310,29 @@ local function onInvoke(player: Player, action: any, name: any, payload: any): a
 				return { ok = false, reason = "teto de perfis" }
 			end
 		end
-		profiles[profile] = cards
+		profiles[profile] = { cards = cards, zoom = number(payload.zoom) }
 		record.layouts[name] = profiles
+
+		-- O primeiro criado vira o padrão e fica; salvar de novo só troca o reaberto.
+		local mark = markOf(record, name)
+		if mark.first == nil then
+			mark.first = profile
+		end
+		mark.last = profile
+
 		save(player, record)
 		return { ok = true }
 	elseif action == "layout_delete" then
 		local profiles = record.layouts[name]
 		if profiles then
-			profiles[tostring(payload)] = nil
+			local profile = tostring(payload)
+			profiles[profile] = nil
+			-- Marca apontando para perfil apagado é pior que marca vazia: o próximo criado assume.
+			local mark = record.marks[name]
+			if mark then
+				mark.first = if mark.first == profile then nil else mark.first
+				mark.last = if mark.last == profile then nil else mark.last
+			end
 			save(player, record)
 		end
 		return { ok = true }

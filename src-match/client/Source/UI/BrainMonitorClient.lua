@@ -4,6 +4,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local Lib = script.Parent.Parent:WaitForChild("Lib")
 local PanelTheme = require(Lib:WaitForChild("PanelTheme"))
@@ -19,11 +20,18 @@ local REMOTE_WAIT = 10
 -- s entre a última mudança de geometria e a gravação; arrastar a janela não é uma escrita por frame.
 local GEOM_DEBOUNCE = 1.5
 
+-- s entre tentativas de achar um corpo ao abrir, e quantas: no boot a janela sobe antes do spawn.
+local NPC_RETRY, NPC_RETRIES = 2, 5
+
 -- px; janela inicial e faixa da alça de redimensionar.
 local WINDOW_W, WINDOW_H = 640, 640
 local WINDOW_MIN = Vector2.new(380, 300)
 local WINDOW_MAX = Vector2.new(2200, 1500)
 local FOOT_H = 88
+
+-- px do chip do NPC na barra de título: largura e folga até a borda direita da janela. O painel que
+-- ele abre se alinha por esta mesma borda — a aresta que liga botão e painel tem que ser uma só.
+local CHIP_W, CHIP_RIGHT = 150, 62
 
 -- px do card, espessura da linha e quanto do card TEM que continuar visível ao arrastar.
 local CARD_W, CARD_H = 122, 38
@@ -94,10 +102,13 @@ local state = {
 	keyOf = {},
 	idOfKey = {},
 	classOf = {},
+	marks = {},
 }
 
 local applyOpen = nil
 local relayoutLinks
+-- Marca a janela como suja para a gravação com atraso; ligado quando a janela existe.
+local touchGeometry = nil
 
 local function invoke(payload)
 	local fn = queryFn
@@ -145,6 +156,16 @@ local function applyZoom(target, screenPoint)
 	ui.scale.Scale = zoom
 	ui.world.Position = UDim2.fromOffset(vx - wx * zoom, vy - wy * zoom)
 	relayoutLinks()
+	if touchGeometry then
+		touchGeometry()
+	end
+end
+
+-- Escala sem âncora de cursor: é o caminho de quem RESTAURA uma escala, não de quem gira a roda.
+local function setZoom(zoom)
+	state.zoom = math.clamp(zoom, ZOOM_MIN, ZOOM_MAX)
+	ui.scale.Scale = state.zoom
+	relayoutLinks()
 end
 
 local function centreOf(key)
@@ -152,40 +173,66 @@ local function centreOf(key)
 	return p.x + CARD_W / 2, p.y + CARD_H / 2
 end
 
--- Retângulo do mundo que a janela mostra agora, com folga de um card.
+-- Retângulo do mundo que a janela mostra agora, em px de mundo. SEM folga: é contra ele que o
+-- segmento é cortado, e uma folga aqui viraria linha desenhada por fora da janela.
 local function visibleRect()
 	local size = ui.viewport.AbsoluteSize
 	local ox, oy = ui.world.Position.X.Offset, ui.world.Position.Y.Offset
-	local pad = CARD_W
-	return (0 - ox) / state.zoom - pad,
-		(0 - oy) / state.zoom - pad,
-		(size.X - ox) / state.zoom + pad,
-		(size.Y - oy) / state.zoom + pad
+	local z = state.zoom
+	return -ox / z, -oy / z, (size.X - ox) / z, (size.Y - oy) / z
 end
 
--- Segmento inteiramente fora da vista não vira Frame: com zoom aproximado a linha entre dois cards
--- distantes viraria milhares de px rotacionados, e nada disso aparece na tela.
+-- Liang–Barsky: devolve o segmento a→b cortado no retângulo, ou nada se ele estiver todo fora.
+local function clipSegment(ax, ay, bx, by, minX, minY, maxX, maxY)
+	local dx, dy = bx - ax, by - ay
+	local t0, t1 = 0, 1
+	local p = { -dx, dx, -dy, dy }
+	local q = { ax - minX, maxX - ax, ay - minY, maxY - ay }
+
+	for i = 1, 4 do
+		if p[i] == 0 then
+			-- Paralelo a este lado: só sobrevive quem já está do lado de dentro dele.
+			if q[i] < 0 then
+				return nil
+			end
+		else
+			local r = q[i] / p[i]
+			if p[i] < 0 then
+				if r > t1 then
+					return nil
+				elseif r > t0 then
+					t0 = r
+				end
+			elseif r < t0 then
+				return nil
+			elseif r < t1 then
+				t1 = r
+			end
+		end
+	end
+
+	return ax + t0 * dx, ay + t0 * dy, ax + t1 * dx, ay + t1 * dy
+end
+
+-- O RECORTE É À MÃO porque `ClipsDescendants` não recorta GuiObject rotacionado: o card tem Rotation
+-- 0 e some na borda, a linha tem Rotation de atan2 e continuava desenhada por cima do jogo, fora da
+-- janela. Não há propriedade que conserte — o jeito é o segmento nunca passar da borda.
 local function positionLink(link, minX, minY, maxX, maxY)
 	local ax, ay = centreOf(link.parentKey)
 	local bx, by = centreOf(link.childKey)
 
-	if
-		(ax < minX and bx < minX)
-		or (ax > maxX and bx > maxX)
-		or (ay < minY and by < minY)
-		or (ay > maxY and by > maxY)
-	then
+	local cax, cay, cbx, cby = clipSegment(ax, ay, bx, by, minX, minY, maxX, maxY)
+	if not cax then
 		link.line.Visible = false
 		return
 	end
 	link.line.Visible = true
 
-	local dx, dy = bx - ax, by - ay
-	local length = math.sqrt(dx * dx + dy * dy)
-
-	link.line.Position = UDim2.fromOffset((ax + bx) / 2, (ay + by) / 2)
-	link.line.Size = UDim2.fromOffset(length, LINK_W)
-	link.line.Rotation = math.deg(math.atan2(dy, dx))
+	local dx, dy = cbx - cax, cby - cay
+	link.line.Position = UDim2.fromOffset((cax + cbx) / 2, (cay + cby) / 2)
+	link.line.Size = UDim2.fromOffset(math.sqrt(dx * dx + dy * dy), LINK_W)
+	-- Ângulo do segmento INTEIRO: no recortado quase nulo o atan2 fica instável e a linha treme.
+	link.line.Rotation = math.deg(math.atan2(by - ay, bx - ax))
 end
 
 relayoutLinks = function()
@@ -402,6 +449,60 @@ local function buildGraph(tree)
 	selectNode(tree)
 end
 
+-- ==================================================================== ARRANJOS
+
+local function currentCards()
+	local cards = {}
+	for id, point in pairs(state.positions) do
+		local key = state.keyOf[id]
+		if key then
+			cards[key] = { x = point.x, y = point.y }
+		end
+	end
+	return cards
+end
+
+local function applyCards(cards)
+	for key, point in pairs(cards) do
+		local id = state.idOfKey[key]
+		local handle = id and state.cards[id]
+		if handle then
+			state.positions[id] = { x = point.x, y = point.y }
+			handle.card.Position = UDim2.fromOffset(point.x, point.y)
+		end
+	end
+	relayoutLinks()
+end
+
+-- Aplicar um arranjo é MARCÁ-LO: é essa marca que a próxima abertura reabre. `keepCamera` guarda a
+-- escala da janela: na restauração de sessão o zoom do arranjo engoliria o zoom com que o autor
+-- deixou a ferramenta, e o zoom lembrado nunca apareceria. No clique manual é o contrário.
+local function loadProfile(name, keepCamera)
+	if not name then
+		return false
+	end
+	local loaded = layoutCall("layout_load", DOCK_KEY, name)
+	if not (loaded and loaded.ok and loaded.cards) then
+		return false
+	end
+	applyCards(loaded.cards)
+	if loaded.zoom and not keepCamera then
+		setZoom(loaded.zoom)
+	end
+	state.marks.last = name
+	setStatus("arranjo '" .. name .. "'")
+	return true
+end
+
+-- Manda o último marcado; sem ele, o primeiro que o autor criou. Sem nenhum dos dois fica o arranjo
+-- automático — o que não pode é a janela voltar ao automático tendo desenho salvo.
+local function restoreLayout()
+	if loadProfile(state.marks.last, true) then
+		return
+	end
+	loadProfile(state.marks.first, true)
+end
+
 -- ==================================================================== PINTURA
 
 local function paint(trace)
@@ -447,21 +548,32 @@ end
 
 -- ==================================================================== SERVIDOR
 
+-- Assinatura no servidor e publicação para a câmera livre, sem tocar no desenho: fechar a janela
+-- passa por aqui, e é o que deixa o sujeito lembrado ao reabrir.
+local function subscribe(agentId)
+	invoke({ op = "Watch", agentId = agentId })
+	WatchedNpc.Set(agentId, if agentId then state.classOf[agentId] else nil)
+end
+
 local function watch(agentId)
 	state.watching = agentId
-	invoke({ op = "Watch", agentId = agentId })
+	subscribe(agentId)
 	ui.chip.Text = agentId or "nenhum NPC"
-	-- Quem escolhe publica: a câmera livre segue o mesmo corpo que este painel desenha.
-	WatchedNpc.Set(agentId, if agentId then state.classOf[agentId] else nil)
 
 	if not agentId then
 		clearGraph()
 		return
 	end
+	if state.marks.npc ~= agentId then
+		state.marks.npc = agentId
+		layoutCall("npc_set", DOCK_KEY, agentId)
+	end
+
 	local result = invoke({ op = "Tree", agentId = agentId })
 	if result and result.ok then
 		buildGraph(result.tree)
 		setStatus(agentId)
+		restoreLayout()
 	else
 		clearGraph()
 		setStatus("sem árvore para " .. agentId)
@@ -538,31 +650,27 @@ local function buildGui()
 		geomPending = true
 		task.delay(GEOM_DEBOUNCE, function()
 			geomPending = false
+			-- A câmera do canvas vai junto: restaurar 8× sem restaurar PARA ONDE ela apontava reabre
+			-- num pedaço vazio do mundo, e a escala lembrada parece quebrada.
 			layoutCall("geom_set", DOCK_KEY, {
 				x = window.AbsolutePosition.X,
 				y = window.AbsolutePosition.Y,
 				w = window.AbsoluteSize.X,
 				h = window.AbsoluteSize.Y,
+				zoom = state.zoom,
+				px = ui.world.Position.X.Offset,
+				py = ui.world.Position.Y.Offset,
 			})
 		end)
 	end
 	window:GetPropertyChangedSignal("Position"):Connect(saveGeometry)
 	window:GetPropertyChangedSignal("Size"):Connect(saveGeometry)
-
-	task.spawn(function()
-		local saved = layoutCall("geom_get", DOCK_KEY)
-		local box = saved and saved.geom
-		if box then
-			window.AnchorPoint = Vector2.zero
-			window.Position = UDim2.fromOffset(box.x, box.y)
-			window.Size = UDim2.fromOffset(box.w, box.h)
-		end
-	end)
+	touchGeometry = saveGeometry
 
 	-- Chip do NPC observado, na própria barra de título: é o seletor e o rótulo ao mesmo tempo.
-	local chip = PanelTheme.Button(bar, "Chip", "nenhum NPC", 150)
+	local chip = PanelTheme.Button(bar, "Chip", "nenhum NPC", CHIP_W)
 	chip.AnchorPoint = Vector2.new(1, 0.5)
-	chip.Position = UDim2.new(1, -62, 0.5, 0)
+	chip.Position = UDim2.new(1, -CHIP_RIGHT, 0.5, 0)
 	chip.ZIndex = 6
 	ui.chip = chip
 
@@ -622,42 +730,29 @@ local function buildGui()
 	ui.status = status
 
 	-- ARRANJOS: o desenho que o autor arrumou à mão vira perfil nomeado, como os slots de rota.
-	local nameBox = PanelTheme.TextBox(footer, "ProfileName", "nome do arranjo", 150)
-	nameBox.Position = UDim2.fromOffset(10, 60)
+	-- A geometria da linha fica em constantes porque o painel é ancorado pela BORDA DIREITA do botão
+	-- que o abre: mover o botão sem mover o painel desalinha os dois, e desalinho de 8 px é o que
+	-- ninguém reporta e todo mundo vê.
+	local FOOT_X, ROW_Y, ROW_GAP = 10, 60, 6
+	local NAME_W, SAVE_W, LIST_BTN_W = 150, 76, 82
+	local SAVE_X = FOOT_X + NAME_W + ROW_GAP
+	local LIST_BTN_X = SAVE_X + SAVE_W + ROW_GAP
 
-	local saveButton = PanelTheme.Button(footer, "Btn_SalvarArranjo", "SALVAR", 76)
-	saveButton.Position = UDim2.fromOffset(166, 60)
+	local nameBox = PanelTheme.TextBox(footer, "ProfileName", "nome do arranjo", NAME_W)
+	nameBox.Position = UDim2.fromOffset(FOOT_X, ROW_Y)
 
-	local listButton = PanelTheme.Button(footer, "Btn_Arranjos", "ARRANJOS", 82)
-	listButton.Position = UDim2.fromOffset(248, 60)
+	local saveButton = PanelTheme.Button(footer, "Btn_SalvarArranjo", "SALVAR", SAVE_W)
+	saveButton.Position = UDim2.fromOffset(SAVE_X, ROW_Y)
 
+	local listButton = PanelTheme.Button(footer, "Btn_Arranjos", "ARRANJOS", LIST_BTN_W)
+	listButton.Position = UDim2.fromOffset(LIST_BTN_X, ROW_Y)
+
+	-- Sobe ACIMA do botão, nunca por cima dele, e cresce para a ESQUERDA: ancorado pela esquerda ele
+	-- se estica na direção da borda da janela e sai por ela.
 	local PROF_W, PROF_H = 210, 140
 	local profPanel, profScroll = PanelTheme.SlotPanel(window, "ARRANJOS SALVOS", PROF_W, PROF_H)
-	profPanel.AnchorPoint = Vector2.new(0, 1)
-	profPanel.Position = UDim2.new(0, 10, 1, -(FOOT_H + 4))
-
-	local function currentCards()
-		local cards = {}
-		for id, point in pairs(state.positions) do
-			local key = state.keyOf[id]
-			if key then
-				cards[key] = { x = point.x, y = point.y }
-			end
-		end
-		return cards
-	end
-
-	local function applyCards(cards)
-		for key, point in pairs(cards) do
-			local id = state.idOfKey[key]
-			local handle = id and state.cards[id]
-			if handle then
-				state.positions[id] = { x = point.x, y = point.y }
-				handle.card.Position = UDim2.fromOffset(point.x, point.y)
-			end
-		end
-		relayoutLinks()
-	end
+	profPanel.AnchorPoint = Vector2.new(1, 1)
+	profPanel.Position = UDim2.new(0, LIST_BTN_X + LIST_BTN_W, 1, -(FOOT_H + PanelTheme.SlotPanelGap()))
 
 	local function refreshProfiles()
 		for _, child in ipairs(profScroll:GetChildren()) do
@@ -675,18 +770,18 @@ local function buildGui()
 			return
 		end
 		for index, name in ipairs(names) do
-			local _row, pick, del = PanelTheme.SlotRow(profScroll, name, index)
+			local label = if name == state.marks.first then name .. "  ·  padrão" else name
+			local _row, pick, del = PanelTheme.SlotRow(profScroll, label, index)
 			pick.Activated:Connect(function()
-				local loaded = layoutCall("layout_load", DOCK_KEY, name)
-				if loaded and loaded.ok then
-					applyCards(loaded.cards)
+				if loadProfile(name) then
 					nameBox.Text = name
-					setStatus("arranjo '" .. name .. "' aplicado")
 				end
 				profPanel.Visible = false
 			end)
 			del.Activated:Connect(function()
 				layoutCall("layout_delete", DOCK_KEY, name)
+				state.marks.first = if state.marks.first == name then nil else state.marks.first
+				state.marks.last = if state.marks.last == name then nil else state.marks.last
 				refreshProfiles()
 			end)
 		end
@@ -699,7 +794,15 @@ local function buildGui()
 			setStatus("dê um nome ao arranjo")
 			return
 		end
-		local result = layoutCall("layout_save", DOCK_KEY, { name = name, cards = currentCards() })
+		local result = layoutCall("layout_save", DOCK_KEY, {
+			name = name,
+			cards = currentCards(),
+			zoom = state.zoom,
+		})
+		if result and result.ok then
+			state.marks.first = state.marks.first or name
+			state.marks.last = name
+		end
 		setStatus(if result and result.ok
 			then "arranjo '" .. name .. "' salvo"
 			else "falha ao salvar: " .. tostring(result and result.reason))
@@ -732,12 +835,14 @@ local function buildGui()
 			world.Position.Y.Offset + delta.Y
 		)
 		relayoutLinks()
+		saveGeometry()
 	end)
 
 	local LIST_W, LIST_H = 210, 150
 	local listPanel, listScroll = PanelTheme.SlotPanel(window, "NPCs NO MUNDO", LIST_W, LIST_H)
+	-- Desce do chip e alinha pela MESMA borda dele; estava 50 px à direita, solto do botão que o abre.
 	listPanel.AnchorPoint = Vector2.new(1, 0)
-	listPanel.Position = UDim2.new(1, -12, 0, metrics.TITLE_H + 4)
+	listPanel.Position = UDim2.new(1, -CHIP_RIGHT, 0, metrics.TITLE_H + PanelTheme.SlotPanelGap())
 
 	local function refreshList()
 		for _, child in ipairs(listScroll:GetChildren()) do
@@ -752,7 +857,7 @@ local function buildGui()
 			empty.Size = UDim2.new(1, 0, 0, 18)
 			empty.LayoutOrder = 1
 			empty.Text = "  (nenhum NPC no mundo)"
-			return
+			return agents
 		end
 		for index, entry in ipairs(agents) do
 			state.classOf[entry.id] = entry.class
@@ -764,6 +869,35 @@ local function buildGui()
 			end)
 		end
 		listScroll.CanvasSize = UDim2.fromOffset(0, #agents * PanelTheme.SLOT_ROW_STRIDE)
+		return agents
+	end
+
+	-- Abrir sem sujeito não pode dar tela vazia: vale o último visto se ele ainda existe, senão um
+	-- corpo qualquer do mundo.
+	local function pickAgent(agents)
+		for _, entry in ipairs(agents) do
+			if entry.id == state.marks.npc then
+				return entry.id
+			end
+		end
+		return if #agents > 0 then agents[math.random(#agents)].id else nil
+	end
+
+	-- Mundo ainda sem corpo: insiste enquanto a janela seguir aberta e sem sujeito.
+	local function chaseAgent()
+		task.spawn(function()
+			for _ = 1, NPC_RETRIES do
+				task.wait(NPC_RETRY)
+				if not window.Visible or state.watching then
+					return
+				end
+				local chosen = pickAgent(refreshList())
+				if chosen then
+					watch(chosen)
+					return
+				end
+			end
+		end)
 	end
 
 	chip.MouseButton1Click:Connect(function()
@@ -777,13 +911,21 @@ local function buildGui()
 		window.Visible = open
 		PanelTheme.SetLauncherActive(toggle, open)
 		if open then
-			refreshList()
-			if state.watching then
-				watch(state.watching)
+			local agents = refreshList()
+			-- Desenho já montado nesta sessão volta como está; só reassina. Remontar aqui jogaria
+			-- fora os cards que o autor arrastou desde a última vez.
+			if state.watching and next(state.cards) then
+				subscribe(state.watching)
+			else
+				local chosen = pickAgent(agents)
+				watch(chosen)
+				if not chosen then
+					chaseAgent()
+				end
 			end
 		else
 			listPanel.Visible = false
-			watch(nil)
+			subscribe(nil)
 		end
 		DockMemory.SetOpen(DOCK_KEY, open)
 	end
@@ -794,6 +936,36 @@ local function buildGui()
 	end)
 	minimize.Activated:Connect(function()
 		setOpen(false)
+	end)
+
+	-- Depois de a janela inteira existir: a restauração mexe no mundo e na escala, que nascem acima.
+	task.spawn(function()
+		local saved = layoutCall("geom_get", DOCK_KEY)
+		local box = saved and saved.geom
+		if not box then
+			return
+		end
+		window.AnchorPoint = Vector2.zero
+		window.Size = UDim2.fromOffset(box.w, box.h)
+
+		-- Presa à tela: geometria gravada com a janela encostada na borda de um monitor maior reabre
+		-- fora da vista, e o único resgate seria adivinhar para onde arrastar o que não se enxerga.
+		local camera = Workspace.CurrentCamera
+		local x, y = box.x, box.y
+		if camera then
+			local view = camera.ViewportSize
+			x = math.clamp(x, 0, math.max(view.X - box.w, 0))
+			y = math.clamp(y, 0, math.max(view.Y - box.h, 0))
+		end
+		window.Position = UDim2.fromOffset(x, y)
+
+		if box.zoom then
+			setZoom(box.zoom)
+		end
+		if box.px and box.py then
+			ui.world.Position = UDim2.fromOffset(box.px, box.py)
+			relayoutLinks()
+		end
 	end)
 
 	screen.Parent = playerGui
@@ -807,7 +979,7 @@ function BrainMonitorClient.Start()
 		return
 	end
 	queryFn = query
-	-- Opcional: sem ele a janela funciona, só não lembra geometria nem arranjo entre sessões.
+	-- Opcional: sem ele a janela funciona, só não lembra geometria, arranjo nem sujeito.
 	local tool = remotes:FindFirstChild("ToolLayout")
 	layoutFn = if tool and tool:IsA("RemoteFunction") then tool else nil
 
@@ -815,6 +987,10 @@ function BrainMonitorClient.Start()
 	if not allowed or not allowed.ok then
 		return
 	end
+
+	-- Antes da janela: a primeira abertura já escolhe arranjo e NPC a partir daqui.
+	local marks = layoutCall("mark_get", DOCK_KEY)
+	state.marks = (marks and marks.mark) or {}
 
 	buildGui()
 	snapshot.OnClientEvent:Connect(onSnapshot)
