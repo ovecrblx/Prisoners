@@ -84,7 +84,8 @@ local HOVER_TWEEN = TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirect
 local SINK_TWEEN = TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
 -- Feed em solo: os botões que entram e saem dele, a célula que faz um painel ocupar a grade toda, o
--- quanto o chiado da tela escolhida desbota, e os s de chiado que cobrem a troca de janela.
+-- quanto o chiado da tela escolhida desbota, os s de chiado que cobrem a troca de janela, e os s de
+-- fundo fechado no Vfx quando o mosaico volta.
 local VIEW_NAME = "View"
 local BACK_NAME = "Back"
 local VALUE_NAME = "Value"
@@ -92,6 +93,7 @@ local NO_SIGNAL = "No Signal"
 local SOLO_CELL = UDim2.fromScale(1, 1)
 local SOLO_FADE = 0.75
 local SWITCH_BURST = 0.35
+local FLASH_MIN, FLASH_MAX = 1, 2
 
 -- O direcional do solo: cada tecla do painel Control soma o próprio eixo (x guinada, y inclinação)
 -- enquanto segurada. graus/s do giro, e os tetos a partir da pose em que a lente estava.
@@ -900,7 +902,6 @@ end
 
 local function brokenLook(slot, on)
 	slot.viewport.BackgroundTransparency = if on then GLITCH_BACKING else slot.backingBase
-	slot.panel.BackgroundTransparency = if on then GLITCH_BACKING else slot.panelBase
 	if slot.vfx then
 		slot.vfx.ImageColor3 = if on then GLITCH_COLOR else slot.vfxColor
 		slot.vfx.ImageTransparency = if on then GLITCH_FADE else slot.vfxFade
@@ -936,6 +937,16 @@ end
 
 -- A ordem de `slots` é a de chegada pelo streaming, não a dos rótulos: a troca segue o NÚMERO da
 -- câmera, senão a CAM 1 levaria à CAM 3.
+-- Voltar ao mosaico fecha o fundo do Vfx de todas as telas, cada uma pelo próprio tempo sorteado:
+-- juntas, as quatro abrindo no mesmo instante leriam como um só clarão da tela, não como quatro
+-- monitores reentrando.
+local function flashPanels()
+	local now = os.clock()
+	for _, slot in ipairs(slots) do
+		slot.flash = now + FLASH_MIN + math.random() * (FLASH_MAX - FLASH_MIN)
+	end
+end
+
 local function nextIndex(from)
 	local order = {}
 	for _, slot in ipairs(slots) do
@@ -1167,6 +1178,11 @@ local function deactivate()
 		slot.lampLevel = nil
 		slot.burst = 0
 		slot.bursting = false
+		slot.flash = 0
+		slot.flashing = false
+		if slot.vfx then
+			slot.vfx.BackgroundTransparency = slot.vfxBacking
+		end
 	end
 	restoreButtons()
 
@@ -1399,6 +1415,14 @@ local function step(delta)
 
 		-- O estouro da troca de janela DESVANECE em vez de piscar: cor e ritmo entram nos da falha e
 		-- escorrem de volta aos autorados ao longo da janela, e a troca lê como sinal reassentando.
+		local flashing = now < slot.flash
+		if flashing ~= slot.flashing then
+			slot.flashing = flashing
+			if slot.vfx then
+				slot.vfx.BackgroundTransparency = if flashing then 0 else slot.vfxBacking
+			end
+		end
+
 		local heat = math.clamp((slot.burst - now) / SWITCH_BURST, 0, 1)
 		if heat > 0 or slot.bursting then
 			slot.bursting = heat > 0
@@ -1616,10 +1640,12 @@ attach = function(index, panel)
 		vfxColor = vfx and vfx.ImageColor3,
 		vfxFade = vfx and vfx.ImageTransparency,
 		vfxAt = 0,
+		vfxBacking = vfx and vfx.BackgroundTransparency,
 		burst = 0,
 		bursting = false,
+		flash = 0,
+		flashing = false,
 		backingBase = viewport.BackgroundTransparency,
-		panelBase = panel.BackgroundTransparency,
 		figures = {},
 		copies = {},
 	}
@@ -1642,6 +1668,7 @@ attach = function(index, panel)
 	if back and back:IsA("GuiButton") then
 		table.insert(controlLinks, back.Activated:Connect(function()
 			setSolo(nil)
+			flashPanels()
 		end))
 		dressButton(back)
 	end
