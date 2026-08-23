@@ -900,7 +900,16 @@ local function scheduleGlitch(now)
 	glitchAt = now + GLITCH_WAIT_MIN + math.random() * (GLITCH_WAIT_MAX - GLITCH_WAIT_MIN)
 end
 
+-- Painel sem sinal E escolhido fecha o próprio fundo: no solo o viewport está escondido e a tela da
+-- cabine é transparente, então a falha não teria onde aparecer. No mosaico o painel fica no autorado.
+local function panelBacking(slot, dead)
+	if slot.panelBase then
+		slot.panel.BackgroundTransparency = if dead and solo == slot.index then GLITCH_BACKING else slot.panelBase
+	end
+end
+
 local function brokenLook(slot, on)
+	panelBacking(slot, on)
 	slot.viewport.BackgroundTransparency = if on then GLITCH_BACKING else slot.backingBase
 	if slot.vfx then
 		slot.vfx.ImageColor3 = if on then GLITCH_COLOR else slot.vfxColor
@@ -989,6 +998,7 @@ local function setSolo(index)
 		-- posição de cada câmera, e a cópia do viewport só taparia o que ela mostra. O chiado da tela
 		-- escolhida desbota junto, pelo mesmo motivo: na cor cheia ele é o que sobra na frente.
 		slot.viewport.Visible = index == nil
+		panelBacking(slot, slot.index == broken)
 		if slot.vfx and slot.index ~= broken then
 			slot.vfx.ImageTransparency = if alone then SOLO_FADE else slot.vfxFade
 		end
@@ -1109,6 +1119,10 @@ local function activate()
 	live = true
 	SecCamController.KeepAwake(true)
 	takeView()
+
+	-- Ocupar o posto é o mosaico entrando pela primeira vez: mesmo clarão da volta do solo, e ele
+	-- ainda cobre o tempo em que a cena está sendo montada em fatias.
+	flashPanels()
 
 	-- A tela só conserta com o posto vazio o tempo do intervalo: sentar de novo na hora devolve o
 	-- operador à mesma falha, senão sair e voltar seria o conserto.
@@ -1646,6 +1660,7 @@ attach = function(index, panel)
 		flash = 0,
 		flashing = false,
 		backingBase = viewport.BackgroundTransparency,
+		panelBase = panel.BackgroundTransparency,
 		figures = {},
 		copies = {},
 	}
