@@ -46,8 +46,10 @@ local VFX_NAME = "Vfx"
 local VFX_SWING = 0.3
 local VFX_MIN, VFX_MAX = 0.05, 0.18
 
--- Chiado do fundo da tela: s entre saltos do grão, e quanto a folha passa da tela para ter folga
--- onde deslizar. O nome também é o da capa inerte de cada painel.
+-- Chiado do fundo da tela: a capa opaca atrás dela, onde a folha de grão mora, os s entre saltos do
+-- grão, e quanto a folha passa da tela para ter folga onde deslizar. O nome da folha também é o da
+-- capa inerte de cada painel.
+local BACKING_NAME = "Back"
 local BACKGROUND_NAME = "Background"
 local SNOW_MIN, SNOW_MAX = 0.05, 0.12
 local SNOW_OVERSCAN = 1.3
@@ -81,13 +83,14 @@ local HOVER_LIFT = 0.25
 local HOVER_TWEEN = TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local SINK_TWEEN = TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
--- Feed em solo: os botões que entram e saem dele, a célula que faz um painel ocupar a grade toda, e
--- os s de chiado que cobrem a troca de janela.
+-- Feed em solo: os botões que entram e saem dele, a célula que faz um painel ocupar a grade toda, o
+-- quanto o chiado da tela escolhida desbota, e os s de chiado que cobrem a troca de janela.
 local VIEW_NAME = "View"
 local BACK_NAME = "Back"
 local VALUE_NAME = "Value"
 local NO_SIGNAL = "No Signal"
 local SOLO_CELL = UDim2.fromScale(1, 1)
+local SOLO_FADE = 0.75
 local SWITCH_BURST = 0.35
 
 -- Corte preto que cobre a troca de vista: s parado no preto, curso do desvanecer, e a ordem que o
@@ -169,8 +172,10 @@ local grid = nil
 local gridCell = nil
 local solo = nil
 
--- A folha de chiado atrás da grade: a folga que ela tem para deslizar, e quando o grão salta.
+-- A folha de chiado atrás da grade: a GUI da capa que a carrega, a folga que ela tem para deslizar,
+-- e quando o grão salta.
 local snow = nil
+local snowSurface = nil
 local snowSlack = Vector2.zero
 local snowAt = 0
 
@@ -735,6 +740,12 @@ local function takeView()
 		surface.Parent = playerGui
 	end
 
+	-- O chiado da capa é do OPERADOR, como os feeds: a cabine fica de pé a partida inteira, e fora da
+	-- sessão a folha nem chega a ser desenhada.
+	if snowSurface then
+		snowSurface.Enabled = true
+	end
+
 	local camera = Workspace.CurrentCamera
 	if camera and viewer then
 		camera.CameraType = Enum.CameraType.Scriptable
@@ -746,6 +757,10 @@ local function releaseView()
 	coverSwap()
 	if prompt then
 		prompt.Enabled = true
+	end
+
+	if snowSurface then
+		snowSurface.Enabled = false
 	end
 
 	-- De volta à peça; pcall porque o streaming pode ter destruído a dona nesse meio-tempo.
@@ -838,6 +853,14 @@ local function setSolo(index)
 		local alone = index ~= nil and slot.index == index
 		slot.panel.Visible = index == nil or alone
 
+		-- Escolhida uma tela, TODO feed sai: o cenário está montado para a vista olhar ao vivo a
+		-- posição de cada câmera, e a cópia do viewport só taparia o que ela mostra. O chiado da tela
+		-- escolhida desbota junto, pelo mesmo motivo: na cor cheia ele é o que sobra na frente.
+		slot.viewport.Visible = index == nil
+		if slot.vfx and slot.index ~= broken then
+			slot.vfx.ImageTransparency = if alone then SOLO_FADE else slot.vfxFade
+		end
+
 		-- No solo os dois trocam de lugar: quem abriu a tela sai, e só resta o caminho de volta.
 		if slot.view then
 			slot.view.Visible = not alone
@@ -891,10 +914,18 @@ local function buildBooth()
 	surface = childLike(surfaceHome, SLOT_PATH[2])
 	viewer = childLike(monitor, VIEWER_NAME)
 
-	-- Ladrilhada e maior que a tela: o grão guarda o tamanho e é a folha que desliza dentro da folga.
+	-- O chiado mora na SurfaceGui da capa opaca ATRÁS da tela, não na da tela: a tela ficou
+	-- transparente para a vista olhar através dela, e a folha pendurada nela sumiria junto.
+	-- Ladrilhada e maior que a capa: o grão guarda o tamanho e é a folha que desliza dentro da folga.
 	-- Embaralhar o chiado esticando o ladrilho fazia o grão respirar, que lê como zoom, não como ruído.
-	local sheet = surface and surface:FindFirstChild(BACKGROUND_NAME)
+	local backing = childLike(monitor, BACKING_NAME)
+	local backSurface = backing and childLike(backing, SLOT_PATH[2])
+	local sheet = backSurface and backSurface:FindFirstChild(BACKGROUND_NAME)
 	snow = if sheet and sheet:IsA("ImageLabel") then sheet else nil
+	snowSurface = if snow then backSurface else nil
+	if snowSurface then
+		snowSurface.Enabled = false
+	end
 	if snow then
 		local size = snow.Size
 		snow.ScaleType = Enum.ScaleType.Tile
@@ -1129,8 +1160,10 @@ local function step(delta)
 		breakSlot(slots[math.random(#slots)])
 	end
 
+	-- No solo os quatro viewports estão escondidos: mover a lente do feed e redesenhar boneco seria
+	-- trabalho por quadro em cima do que ninguém vê.
 	for _, slot in ipairs(slots) do
-		if slot.index ~= broken and (solo == nil or slot.index == solo) then
+		if solo == nil and slot.index ~= broken then
 			slot.camera.CFrame = slot.head.CFrame
 		end
 
@@ -1172,11 +1205,10 @@ local function step(delta)
 	end
 
 	sinceFigure += delta
-	-- Painel fora da tela não gasta boneco: no solo, três dos quatro feeds estão escondidos.
-	if sinceFigure >= FIGURE_INTERVAL then
+	if sinceFigure >= FIGURE_INTERVAL and solo == nil then
 		sinceFigure = 0
 		for _, slot in ipairs(slots) do
-			if slot.index ~= broken and (solo == nil or slot.index == solo) then
+			if slot.index ~= broken then
 				syncFigures(slot)
 			end
 		end
@@ -1195,6 +1227,7 @@ unbind = function()
 	surface = nil
 	surfaceHome = nil
 	snow = nil
+	snowSurface = nil
 	viewer = nil
 	if booth then
 		booth:Destroy()
@@ -1402,6 +1435,9 @@ attach = function(index, panel)
 		end))
 		dressButton(value)
 	end
+
+	-- O painel que o streaming devolveu no meio de um solo entra no arranjo de agora, não no mosaico.
+	setSolo(solo)
 
 	-- Chegou com o posto já ocupado: entra com a cena montada, não preta até o próximo sentar. Se for
 	-- a tela caída, volta caída — a falha é do índice, não do slot, que o streaming refaz.
