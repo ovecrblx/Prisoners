@@ -57,6 +57,10 @@ local SfxConfig = {
 	-- próprio Sound. Loja: create.roblox.com/store/asset/124398148205753
 	FanLoop = { Id = 124398148205753, Volume = 0.105, Range = 40, Looped = true },
 
+	-- Tecla de luz de parede: estalo seco, preso na peça e de alcance curto.
+	SwitchOn = { Id = 130452431655432, Volume = 0.45, Range = 25 },
+	SwitchOff = { Id = 12222170, Volume = 0.45, Range = 25 },
+
 	-- Prompt do cenário, no instante em que o jogador segura.
 	Prompt = { Id = 9119730203, Volume = 0.35, Speed = 1.35 },
 }
