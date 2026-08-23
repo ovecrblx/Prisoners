@@ -65,8 +65,9 @@ local BLINK_GAP = BLINK_ON * 2.2
 -- 1/s com que a brasa do neon apaga depois da piscada.
 local BLINK_FADE = 6
 
-local LED_DIM = Color3.fromRGB(38, 0, 0)
-local LED_LIT = Color3.fromRGB(255, 25, 25)
+-- A lâmpada pisca em INTENSIDADE da própria cor autorada: aceso é a cor cheia, apagado é ela
+-- escurecida a esta fração — nunca o quase-preto, que em Neon lê como lâmpada oca.
+local LED_EMBER = 0.35
 
 -- s de espera pela pasta no boot.
 local FOLDER_WAIT = 20
@@ -87,6 +88,13 @@ local forced = false
 
 function SecCamController.KeepAwake(state)
 	forced = state == true
+end
+
+-- A pose de repouso da lente — o zero do patrulhamento. É daqui que quem dirige a câmera mede os
+-- limites, em vez da pose solta em que o rastreio estava no instante.
+function SecCamController.BasePose(model)
+	local entry = cams[model]
+	return entry and entry.base
 end
 local sinceTarget = 0
 
@@ -146,7 +154,16 @@ local function refresh(entry)
 	end
 
 	entry.followers = followers
-	entry.led = entry.model:FindFirstChild(LED_NAME, true)
+
+	-- A paleta sai da cor autorada da peça, e só quando a peça TROCA: capturar de novo a mesma no
+	-- meio de uma piscada assaria o escurecido como se fosse o aceso.
+	local led = entry.model:FindFirstChild(LED_NAME, true)
+	if led ~= entry.led then
+		entry.led = led
+		entry.ledLit = led and led.Color
+		entry.ledDim = led and led.Color:Lerp(Color3.new(0, 0, 0), 1 - LED_EMBER)
+		entry.ledLevel = -1
+	end
 
 	-- Listas do movimento em lote, montadas aqui e reaproveitadas todo quadro.
 	local parts = table.create(#followers + 1)
@@ -271,7 +288,7 @@ local function updateLed(entry, now)
 	local level = if now < entry.litUntil then 1 else math.max(0, 1 - (now - entry.litUntil) * BLINK_FADE)
 	if math.abs(level - entry.ledLevel) > 0.01 then
 		entry.ledLevel = level
-		led.Color = LED_DIM:Lerp(LED_LIT, level)
+		led.Color = entry.ledDim:Lerp(entry.ledLit, level)
 		-- Publica o brilho junto da cor: quem quiser o RITMO da lâmpada lê daqui em vez de tentar
 		-- decodificar a cor, o que só funcionaria copiando a paleta deste módulo.
 		led:SetAttribute(SecCamController.LampAttribute, level)
@@ -283,6 +300,8 @@ end
 function SecCamController.Lamp(part, now)
 	local entry = {
 		led = part,
+		ledLit = part.Color,
+		ledDim = part.Color:Lerp(Color3.new(0, 0, 0), 1 - LED_EMBER),
 		tracking = false,
 		blinkAt = now + math.random() * BLINK_IDLE_MAX,
 		litUntil = 0,

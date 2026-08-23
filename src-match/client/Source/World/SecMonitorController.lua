@@ -67,9 +67,9 @@ local GLITCH_COOLDOWN = 30
 local CONTROL_NAME = "Control"
 local POWER_NAME = "Power"
 
--- studs que a tecla afunda, s do curso de ida e volta, e s entre o clique e sair do monitor.
+-- studs que a tecla afunda, s de cada perna do curso (ida e volta), e s entre o clique e sair.
 local PRESS_DEPTH = 0.015
-local PRESS_TWEEN = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true)
+local PRESS_TIME = 0.12
 local POWER_DELAY = 0.5
 
 -- Painel transparente por cima da tecla: é ele que recebe o hover e o clique.
@@ -92,6 +92,34 @@ local NO_SIGNAL = "No Signal"
 local SOLO_CELL = UDim2.fromScale(1, 1)
 local SOLO_FADE = 0.75
 local SWITCH_BURST = 0.35
+
+-- O direcional do solo: cada tecla do painel Control soma o próprio eixo (x guinada, y inclinação)
+-- enquanto segurada. graus/s do giro, e os tetos a partir da pose em que a lente estava.
+local TURN_DIRS = {
+	Up = Vector2.new(0, 1),
+	Low = Vector2.new(0, -1),
+	Left = Vector2.new(-1, 0),
+	Right = Vector2.new(1, 0),
+}
+local TURN_SPEED = 40
+local TURN_YAW = 110
+local TURN_PITCH = 50
+
+-- Limites por câmera, os dois eixos no MESMO convênio: curso em graus a partir da pose de REPOUSO
+-- autorada da lente — o solo sempre abre nela, no zero. `yaw` Min à esquerda / Max à direita;
+-- `pitch` Min para baixo / Max para cima. Câmera sem entrada aqui fica nos tetos gerais.
+local TURN_LIMITS = {
+	[1] = { yaw = NumberRange.new(-12, 12), pitch = NumberRange.new(-12, 12) },
+	[2] = { yaw = NumberRange.new(-12, 12), pitch = NumberRange.new(-12, 12) },
+	[3] = { yaw = NumberRange.new(-12, 12), pitch = NumberRange.new(-12, 12) },
+	[4] = { yaw = NumberRange.new(-12, 12), pitch = NumberRange.new(-12, 12) },
+}
+
+-- Modelos do cenário que cada câmera NÃO renderiza, por nome em minúsculas: ficam fora da cópia do
+-- feed dela e são velados na vista ao vivo do solo dela. Nome exato — Dual_Door1 não é Dual_Door.
+local CAM_IGNORES = {
+	[1] = { ["dual_door"] = true },
+}
 
 -- Corte preto que cobre a troca de vista: s parado no preto, curso do desvanecer, e a ordem que o
 -- põe acima de tudo, cursor incluso.
@@ -172,6 +200,13 @@ local grid = nil
 local gridCell = nil
 local solo = nil
 
+-- O solo dirigido: a pose da lente ao entrar já decomposta em posição, guinada e inclinação de
+-- MUNDO, o giro acumulado, e as teclas seguradas agora. A rolagem do rastreio é descartada.
+local soloBase = nil
+local soloYaw = 0
+local soloPitch = 0
+local turnHeld = {}
+
 -- A folha de chiado atrás da grade: a GUI da capa que a carrega, a folga que ela tem para deslizar,
 -- e quando o grão salta.
 local snow = nil
@@ -179,16 +214,20 @@ local snowSurface = nil
 local snowSlack = Vector2.zero
 local snowAt = 0
 
--- A cabine clonada do operador, e a lâmpada da mesa decorativa, que pisca para quem passa.
+-- A cabine clonada do operador, a pose autorada da vista, o desvio da vista até o pivô da cabine, e
+-- a lâmpada da mesa decorativa, que pisca para quem passa.
 local booth = nil
+local viewerHome = nil
+local boothOffset = nil
 local deskLamp = nil
 local deskLed = nil
 
--- A tecla de desligar, a pose dela em repouso, o clique preso, a pose autorada de cada tecla da tela
--- e o passo da lâmpada da cabine.
+-- A tecla de desligar, o desvio autorado dela até o pivô da cabine, o instante do clique, a pose
+-- autorada de cada tecla da tela e o passo da lâmpada da cabine.
 local boundMonitor = nil
 local powerPart = nil
-local powerHome = nil
+local powerLocal = nil
+local pressedAt = -math.huge
 local controlLinks = {}
 local buttonHomes = {}
 local hoverPad = nil
@@ -285,42 +324,52 @@ local function watchHover(button)
 	end))
 end
 
-local function scaledBy(size, factor)
-	return UDim2.new(size.X.Scale * factor, size.X.Offset * factor, size.Y.Scale * factor, size.Y.Offset * factor)
-end
-
 -- A cabine sobrevive à sessão, e largar o posto não dispara MouseLeave: sem devolver a pose autorada,
 -- a tecla ficaria crescida esperando um ponteiro que já não está lá.
 local function restoreButtons()
 	for _, home in ipairs(buttonHomes) do
 		if home.button.Parent then
-			home.button.Size = home.size
+			home.scale.Scale = 1
 			home.button.BackgroundTransparency = home.fade
 		end
 	end
 end
 
 -- Toda tecla da tela reage igual: cresce e fecha o fundo sob o ponteiro, afunda no clique e volta.
--- Tecla coberta por painel de hover recebe os sinais pelo painel, e o movimento continua na tecla.
+-- O crescer é um UIScale dentro do alvo — Size direto brigaria com o UIGridLayout do direcional, que
+-- é dono do tamanho dos filhos. O alvo pode ser o Frame pai da tecla; os sinais vêm de `source`.
 -- AutoButtonColor sai porque tinge a tecla por conta própria, fora deste curso.
 local function dressButton(button, source)
 	source = source or button
-	local home, fade = button.Size, button.BackgroundTransparency
-	local big, small = scaledBy(home, HOVER_GROW), scaledBy(home, PRESS_SINK)
-	button.AutoButtonColor = false
-	table.insert(buttonHomes, { button = button, size = home, fade = fade })
+	local fade = button.BackgroundTransparency
+	for _, item in ipairs({ button, source }) do
+		if item:IsA("GuiButton") then
+			item.AutoButtonColor = false
+		end
+	end
+
+	-- Reaproveitado: a câmera que sai e volta pelo streaming refaz o attach no mesmo painel, e um
+	-- segundo UIScale multiplicaria o primeiro.
+	local scale = button:FindFirstChildOfClass("UIScale")
+	if not scale then
+		scale = Instance.new("UIScale")
+		scale.Parent = button
+	end
+	table.insert(buttonHomes, { button = button, scale = scale, fade = fade })
 
 	table.insert(
 		controlLinks,
 		source.MouseEnter:Connect(function()
 			local lifted = math.max(0, fade - HOVER_LIFT)
-			TweenService:Create(button, HOVER_TWEEN, { Size = big, BackgroundTransparency = lifted }):Play()
+			TweenService:Create(scale, HOVER_TWEEN, { Scale = HOVER_GROW }):Play()
+			TweenService:Create(button, HOVER_TWEEN, { BackgroundTransparency = lifted }):Play()
 		end)
 	)
 	table.insert(
 		controlLinks,
 		source.MouseLeave:Connect(function()
-			TweenService:Create(button, HOVER_TWEEN, { Size = home, BackgroundTransparency = fade }):Play()
+			TweenService:Create(scale, HOVER_TWEEN, { Scale = 1 }):Play()
+			TweenService:Create(button, HOVER_TWEEN, { BackgroundTransparency = fade }):Play()
 		end)
 	)
 
@@ -328,13 +377,13 @@ local function dressButton(button, source)
 		table.insert(
 			controlLinks,
 			source.MouseButton1Down:Connect(function()
-				TweenService:Create(button, SINK_TWEEN, { Size = small }):Play()
+				TweenService:Create(scale, SINK_TWEEN, { Scale = PRESS_SINK }):Play()
 			end)
 		)
 		table.insert(
 			controlLinks,
 			source.MouseButton1Up:Connect(function()
-				TweenService:Create(button, SINK_TWEEN, { Size = big }):Play()
+				TweenService:Create(scale, SINK_TWEEN, { Scale = HOVER_GROW }):Play()
 			end)
 		)
 	end
@@ -347,12 +396,13 @@ local function dropControlLinks()
 		link:Disconnect()
 	end
 	table.clear(controlLinks)
+	table.clear(turnHeld)
 	restoreButtons()
 	table.clear(buttonHomes)
 	hideCursor()
 	lamp = nil
 	powerPart = nil
-	powerHome = nil
+	powerLocal = nil
 
 	if hoverPad then
 		hoverPad:Destroy()
@@ -433,6 +483,47 @@ local function wantedInScene(item)
 	return item:IsA("BasePart") and item.Transparency < 1 and not isCamPart(item)
 end
 
+-- A caixa do nome não tem cobertura, então a peça pertence ao modelo ignorado por nome minúsculo,
+-- em qualquer nível de aninhamento.
+local function inNamedModel(item, names)
+	local model = item:FindFirstAncestorOfClass("Model")
+	while model do
+		if names[string.lower(model.Name)] then
+			return true
+		end
+		model = model:FindFirstAncestorOfClass("Model")
+	end
+	return false
+end
+
+-- Fora da renderização DESTE cliente agora: a lente em uso e o que a câmera dela ignora. As demais
+-- lentes ficam de pé — aparecem no quadro umas das outras, como câmera de verdade.
+-- LocalTransparencyModifier é só de render local; a Transparency replicada fica intacta.
+local veiled = {}
+
+local function veilModel(model, on)
+	for _, item in ipairs(model:GetDescendants()) do
+		if item:IsA("BasePart") then
+			item.LocalTransparencyModifier = if on then 1 else 0
+		end
+	end
+end
+
+local function syncVeil(wanted)
+	for model in pairs(veiled) do
+		if not wanted[model] then
+			veiled[model] = nil
+			veilModel(model, false)
+		end
+	end
+	for model in pairs(wanted) do
+		if not veiled[model] then
+			veiled[model] = true
+			veilModel(model, true)
+		end
+	end
+end
+
 -- O mapa INTEIRO entra, varrendo a hierarquia do cenário: consulta espacial não devolve peça com
 -- CanQuery desligado (medido: 148 das 1546 assim), e raio ou teto cortavam o resto em silêncio.
 local function collectSources()
@@ -456,13 +547,14 @@ local function buildScene(slot)
 	scene.Parent = slot.viewport
 	slot.scene = scene
 
+	local ignores = CAM_IGNORES[slot.index]
 	task.spawn(function()
 		local spent = 0
 		for index, source in ipairs(sceneSources) do
 			if slot.scene ~= scene then
 				return
 			end
-			if source.Parent then
+			if source.Parent and not (ignores and inNamedModel(source, ignores)) then
 				local copy = source:Clone()
 				stripCopy(copy)
 				copy.Parent = scene
@@ -523,6 +615,23 @@ local function watchScenery()
 	table.insert(
 		sceneLinks,
 		sceneRoot.DescendantAdded:Connect(function(item)
+			-- Peça de modelo velado que o streaming trouxe no meio do solo chega já invisível. E um
+			-- modelo ignorado que renasce invalida o cache: a próxima passada o resolve de novo.
+			if item:IsA("BasePart") then
+				for model in pairs(veiled) do
+					if item:IsDescendantOf(model) then
+						item.LocalTransparencyModifier = 1
+						break
+					end
+				end
+			elseif item:IsA("Model") then
+				for _, slot in ipairs(slots) do
+					local ignores = CAM_IGNORES[slot.index]
+					if ignores and ignores[string.lower(item.Name)] then
+						slot.hidden = nil
+					end
+				end
+			end
 			if not wantedInScene(item) then
 				return
 			end
@@ -530,7 +639,8 @@ local function watchScenery()
 			local index = #sceneSources
 			scenePoses[index] = item.CFrame
 			for _, slot in ipairs(slots) do
-				if slot.scene then
+				local ignores = CAM_IGNORES[slot.index]
+				if slot.scene and not (ignores and inNamedModel(item, ignores)) then
 					local copy = item:Clone()
 					stripCopy(copy)
 					copy.Parent = slot.scene
@@ -747,9 +857,9 @@ local function takeView()
 	end
 
 	local camera = Workspace.CurrentCamera
-	if camera and viewer then
+	if camera and viewerHome then
 		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = viewer.CFrame
+		camera.CFrame = viewerHome
 	end
 end
 
@@ -790,15 +900,19 @@ end
 
 local function brokenLook(slot, on)
 	slot.viewport.BackgroundTransparency = if on then GLITCH_BACKING else slot.backingBase
+	slot.panel.BackgroundTransparency = if on then GLITCH_BACKING else slot.panelBase
 	if slot.vfx then
 		slot.vfx.ImageColor3 = if on then GLITCH_COLOR else slot.vfxColor
 		slot.vfx.ImageTransparency = if on then GLITCH_FADE else slot.vfxFade
 	end
 
 	-- O rótulo do botão diz o estado da tela: a falha se anuncia onde o operador ia clicar para
-	-- abrir o feed.
+	-- abrir o feed. E tela caída não se dirige — o direcional some com o sinal.
 	if slot.view then
 		slot.view.Text = if on then NO_SIGNAL else slot.viewText
+	end
+	if slot.control then
+		slot.control.Visible = not on and solo == slot.index
 	end
 end
 
@@ -849,6 +963,13 @@ local function setSolo(index)
 		grid.CellSize = if index then SOLO_CELL else gridCell
 	end
 
+	-- Cada solo começa na pose em que a lente estava, com o giro zerado; dali quem vira é o operador.
+	if changed then
+		soloBase = nil
+		soloYaw, soloPitch = 0, 0
+		table.clear(turnHeld)
+	end
+
 	for _, slot in ipairs(slots) do
 		local alone = index ~= nil and slot.index == index
 		slot.panel.Visible = index == nil or alone
@@ -867,6 +988,9 @@ local function setSolo(index)
 		end
 		if slot.back then
 			slot.back.Visible = alone
+		end
+		if slot.control then
+			slot.control.Visible = alone
 		end
 	end
 
@@ -913,6 +1037,11 @@ local function buildBooth()
 	surfaceHome = childLike(monitor, SLOT_PATH[1])
 	surface = childLike(surfaceHome, SLOT_PATH[2])
 	viewer = childLike(monitor, VIEWER_NAME)
+
+	-- A pose autorada da vista, e o desvio dela até o pivô: com os dois a cabine INTEIRA viaja com a
+	-- câmera, e a moldura cai sobre o quadro do mesmo jeito em qualquer lente.
+	viewerHome = viewer and viewer.CFrame
+	boothOffset = if viewerHome then viewerHome:Inverse() * booth:GetPivot() else nil
 
 	-- O chiado mora na SurfaceGui da capa opaca ATRÁS da tela, não na da tela: a tela ficou
 	-- transparente para a vista olhar através dela, e a folha pendurada nela sumiria junto.
@@ -1017,6 +1146,7 @@ local function deactivate()
 	releaseView()
 	leftAt = os.clock()
 	unwatchScenery()
+	syncVeil({})
 
 	-- A cabine FICA de pé, só esvaziada: derrubá-la a cada sessão devolveria o atraso da luz, que é
 	-- justamente o que montá-la no boot evita. Some o cenário dos feeds, some o boneco, e o painel
@@ -1041,8 +1171,11 @@ local function deactivate()
 	restoreButtons()
 
 	-- A grade volta ao arranjo autorado: quem sentar depois começa com os quatro feeds, não no solo
-	-- que o operador anterior deixou.
+	-- que o operador anterior deixou. E a cabine volta à base, que ela fica de pé entre sessões.
 	setSolo(nil)
+	if booth and viewerHome and boothOffset then
+		booth:PivotTo(viewerHome * boothOffset)
+	end
 end
 
 local unbind = nil
@@ -1160,6 +1293,89 @@ local function step(delta)
 		breakSlot(slots[math.random(#slots)])
 	end
 
+	-- No solo a vista É a câmera do jogador na lente escolhida, e a cabine viaja colada na orientação
+	-- dela: moldura, chiado e teclas continuam sendo o quadro do monitor sobre o que a lente enquadra.
+	-- A lente NÃO segue a Head no solo: parte da pose em que estava e dali quem vira é o direcional.
+	-- Sem solo, ou com a tela caída, a vista volta ao posto — e a cabine, à base autorada.
+	local soloSlot = if solo and solo ~= broken then slotAt(solo) else nil
+
+	-- O véu acompanha a lente em uso, por quadro: a própria lente mais o que a câmera dela ignora.
+	-- Cobre troca de solo, tela que cai no meio dele e câmera que o streaming levou — no quadro
+	-- seguinte o véu já está nos modelos certos, ou em nenhum.
+	local wantedVeil = {}
+	if soloSlot then
+		if soloSlot.camModel then
+			wantedVeil[soloSlot.camModel] = true
+		end
+		local ignores = CAM_IGNORES[soloSlot.index]
+		if ignores and not soloSlot.hidden then
+			soloSlot.hidden = {}
+			for _, item in ipairs(sceneRoot and sceneRoot:GetDescendants() or {}) do
+				if item:IsA("Model") and ignores[string.lower(item.Name)] then
+					table.insert(soloSlot.hidden, item)
+				end
+			end
+		end
+		for _, model in ipairs(soloSlot.hidden or {}) do
+			if model.Parent then
+				wantedVeil[model] = true
+			end
+		end
+	end
+	syncVeil(wantedVeil)
+
+	local target = viewerHome
+	if soloSlot then
+		-- O zero é a pose de REPOUSO autorada da lente, a base do patrulhamento — não a pose solta em
+		-- que o rastreio estava ao entrar: nela os limites caíam num lugar diferente a cada solo. E a
+		-- pose entra DECOMPOSTA em guinada e inclinação de mundo, rolagem fora: girar sobre o CFrame
+		-- cru misturava os eixos, e cada tecla deve mover só o próprio.
+		if not soloBase then
+			local pose = SecCamController.BasePose(soloSlot.camModel) or soloSlot.head.CFrame
+			local look = pose.LookVector
+			soloBase = {
+				position = pose.Position,
+				yaw = math.atan2(-look.X, -look.Z),
+				pitch = math.asin(math.clamp(look.Y, -1, 1)),
+			}
+		end
+
+		local turn = Vector2.zero
+		for direction, axis in pairs(TURN_DIRS) do
+			if turnHeld[direction] then
+				turn += axis
+			end
+		end
+
+		local limits = TURN_LIMITS[soloSlot.index]
+		local yawLo = if limits then limits.yaw.Min else -TURN_YAW
+		local yawHi = if limits then limits.yaw.Max else TURN_YAW
+		local pitchLo = if limits then limits.pitch.Min else -TURN_PITCH
+		local pitchHi = if limits then limits.pitch.Max else TURN_PITCH
+		soloYaw = math.clamp(soloYaw + turn.X * TURN_SPEED * delta, yawLo, yawHi)
+		soloPitch = math.clamp(soloPitch + turn.Y * TURN_SPEED * delta, pitchLo, pitchHi)
+		target = CFrame.new(soloBase.position)
+			* CFrame.Angles(0, soloBase.yaw + math.rad(soloYaw), 0)
+			* CFrame.Angles(soloBase.pitch + math.rad(soloPitch), 0, 0)
+	end
+	local camera = Workspace.CurrentCamera
+	if camera and target then
+		camera.CFrame = target
+		if boothOffset then
+			local pivot = target * boothOffset
+			booth:PivotTo(pivot)
+
+			-- A tecla é reescrita em espaço LOCAL da cabine: o afundo do clique viaja junto dela em
+			-- qualquer lente — escrito em pose absoluta da mesa, o clique a mandava de volta para lá.
+			if powerPart and powerLocal then
+				local t = (now - pressedAt) / PRESS_TIME
+				local leg = math.clamp(if t < 1 then t else 2 - t, 0, 1)
+				local eased = 1 - (1 - leg) * (1 - leg)
+				powerPart.CFrame = pivot * powerLocal * CFrame.new(0, 0, PRESS_DEPTH * eased)
+			end
+		end
+	end
+
 	-- No solo os quatro viewports estão escondidos: mover a lente do feed e redesenhar boneco seria
 	-- trabalho por quadro em cima do que ninguém vê.
 	for _, slot in ipairs(slots) do
@@ -1229,6 +1445,8 @@ unbind = function()
 	snow = nil
 	snowSurface = nil
 	viewer = nil
+	viewerHome = nil
+	boothOffset = nil
 	if booth then
 		booth:Destroy()
 		booth = nil
@@ -1241,21 +1459,18 @@ unbind = function()
 	boundMonitor = nil
 end
 
--- A tecla afunda e volta sozinha (o tween reverte), e o posto só é largado depois da espera: sair no
--- mesmo quadro do clique engoliria o movimento da tecla.
+-- A tecla afunda e volta sozinha — o curso é desenhado no passo, em espaço local da cabine — e o
+-- posto só é largado depois da espera: sair no mesmo quadro do clique engoliria o movimento.
 local function pressPower()
 	if pressing or not live or not powerPart then
 		return
 	end
 	pressing = true
-	TweenService:Create(powerPart, PRESS_TWEEN, { CFrame = powerHome * CFrame.new(0, 0, PRESS_DEPTH) }):Play()
+	pressedAt = os.clock()
 
 	task.delay(POWER_DELAY, function()
 		pressing = false
 		hideCursor()
-		if powerPart and powerHome then
-			powerPart.CFrame = powerHome
-		end
 		local character = Players.LocalPlayer.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -1280,7 +1495,7 @@ bindControl = function(monitor)
 	end
 
 	powerPart = childLike(control, POWER_NAME)
-	powerHome = powerPart and powerPart.CFrame
+	powerLocal = if powerPart and booth then booth:GetPivot():Inverse() * powerPart.CFrame else nil
 	if not powerPart then
 		return
 	end
@@ -1377,10 +1592,13 @@ attach = function(index, panel)
 	local rec = panel:FindFirstChild(REC_NAME)
 	local back = panel:FindFirstChild(BACK_NAME)
 	local view = panel:FindFirstChild(VIEW_NAME)
+	local pad = panel:FindFirstChild(CONTROL_NAME)
 	local slot = {
 		index = index,
 		back = back,
 		view = view,
+		control = pad,
+		camModel = model,
 		viewText = view and view:IsA("TextButton") and view.Text or "",
 		panel = panel,
 		viewport = viewport,
@@ -1401,6 +1619,7 @@ attach = function(index, panel)
 		burst = 0,
 		bursting = false,
 		backingBase = viewport.BackgroundTransparency,
+		panelBase = panel.BackgroundTransparency,
 		figures = {},
 		copies = {},
 	}
@@ -1434,6 +1653,25 @@ attach = function(index, panel)
 			setSolo(if solo == nil then index else nextIndex(index))
 		end))
 		dressButton(value)
+	end
+
+	-- O direcional: segurar vira, soltar para — Activated não serve, o gesto é contínuo. Arrastar
+	-- para fora da tecla solta também, senão o giro ficaria preso com o botão do mouse já livre.
+	for direction in pairs(TURN_DIRS) do
+		local arm = pad and pad:FindFirstChild(direction)
+		local button = arm and arm:FindFirstChildWhichIsA("GuiButton", true)
+		if button then
+			table.insert(controlLinks, button.MouseButton1Down:Connect(function()
+				turnHeld[direction] = true
+			end))
+			table.insert(controlLinks, button.MouseButton1Up:Connect(function()
+				turnHeld[direction] = nil
+			end))
+			table.insert(controlLinks, button.MouseLeave:Connect(function()
+				turnHeld[direction] = nil
+			end))
+			dressButton(arm, button)
+		end
 	end
 
 	-- O painel que o streaming devolveu no meio de um solo entra no arranjo de agora, não no mosaico.
