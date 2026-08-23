@@ -46,6 +46,13 @@ local VFX_NAME = "Vfx"
 local VFX_SWING = 0.3
 local VFX_MIN, VFX_MAX = 0.05, 0.18
 
+-- Chiado do fundo da tela: s entre saltos do grão, e quanto o ladrilho e a transparência variam em
+-- volta do autorado. O nome também é o da capa inerte de cada painel.
+local BACKGROUND_NAME = "Background"
+local SNOW_MIN, SNOW_MAX = 0.01, 0.035
+local SNOW_SWING = 0.45
+local SNOW_FADE = 0.12
+
 -- Falha de sinal, uma tela por vez: s de espera até ela cair, o intervalo curto do chiado enquanto
 -- está caída, e os s longe do posto que a consertam. A espera vai de segundos a minutos.
 local GLITCH_WAIT_MIN, GLITCH_WAIT_MAX = 8, 210
@@ -70,7 +77,6 @@ local HOVER_NAME = "PowerHover"
 -- Feed em solo: os botões que entram e saem dele, e a célula que faz um painel ocupar a grade toda.
 local VIEW_NAME = "View"
 local BACK_NAME = "Back"
-local BACKGROUND_NAME = "Background"
 local NO_SIGNAL = "No Signal"
 local SOLO_CELL = UDim2.fromScale(1, 1)
 
@@ -152,6 +158,12 @@ local sceneLinks = {}
 local grid = nil
 local gridCell = nil
 local solo = nil
+
+-- A folha de chiado atrás da grade: o ladrilho e a transparência autorados, e quando o grão salta.
+local snow = nil
+local snowTile = nil
+local snowFade = 0
+local snowAt = 0
 
 -- A cabine clonada do operador, e a lâmpada da mesa decorativa, que pisca para quem passa.
 local booth = nil
@@ -739,6 +751,17 @@ local function buildBooth()
 	surfaceHome = childLike(monitor, SLOT_PATH[1])
 	surface = childLike(surfaceHome, SLOT_PATH[2])
 	viewer = childLike(monitor, VIEWER_NAME)
+
+	-- A folha é autorada esticada, e esticada uma textura de ruído vira mancha: ladrilhada, cada
+	-- repetição vira grão, que é o que o chiado é.
+	local sheet = surface and surface:FindFirstChild(BACKGROUND_NAME)
+	snow = if sheet and sheet:IsA("ImageLabel") then sheet else nil
+	if snow then
+		snow.ScaleType = Enum.ScaleType.Tile
+		snowTile = snow.TileSize
+		snowFade = snow.ImageTransparency
+	end
+
 	grid = frame:FindFirstChildOfClass("UIGridLayout")
 	gridCell = grid and grid.CellSize
 	bindControl(monitor)
@@ -941,6 +964,17 @@ local function step(delta)
 		return
 	end
 
+	-- O grão do fundo salta no próprio passo, fora do ritmo do Vfx dos painéis: junto deles o fundo
+	-- leria como um quinto feed, não como ruído do tubo.
+	if snow and now >= snowAt then
+		snowAt = now + SNOW_MIN + math.random() * (SNOW_MAX - SNOW_MIN)
+		local x = 1 + (math.random() * 2 - 1) * SNOW_SWING
+		local y = 1 + (math.random() * 2 - 1) * SNOW_SWING
+		local tile = snowTile
+		snow.TileSize = UDim2.new(tile.X.Scale * x, tile.X.Offset * x, tile.Y.Scale * y, tile.Y.Offset * y)
+		snow.ImageTransparency = math.clamp(snowFade + (math.random() * 2 - 1) * SNOW_FADE, 0, 1)
+	end
+
 	sinceScene += delta
 	if sinceScene >= SCENE_SYNC_INTERVAL then
 		sinceScene = 0
@@ -1007,6 +1041,7 @@ unbind = function()
 	table.clear(pending)
 	surface = nil
 	surfaceHome = nil
+	snow = nil
 	viewer = nil
 	if booth then
 		booth:Destroy()
