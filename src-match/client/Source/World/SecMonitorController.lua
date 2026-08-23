@@ -318,10 +318,11 @@ local function findHead(model)
 	return byMesh
 end
 
--- Dentro do viewport nada disso desenha nem roda; só pesaria na cópia.
+-- Dentro do viewport nada disso desenha nem roda; só pesaria na cópia. Texture herda de Decal, e
+-- SurfaceAppearance é a pintura PBR das MeshParts — sem ela o corpo e o cenário saem lisos.
 local function stripCopy(part)
 	for _, item in ipairs(part:GetDescendants()) do
-		if not (item:IsA("Decal") or item:IsA("SpecialMesh")) then
+		if not (item:IsA("Decal") or item:IsA("SpecialMesh") or item:IsA("SurfaceAppearance")) then
 			item:Destroy()
 		end
 	end
@@ -499,20 +500,51 @@ local function clearFigures(slot)
 	end
 end
 
--- Boneco: cópia enxuta do personagem, com as peças reposicionadas em lote a cada atualização.
+local function listParts(items)
+	local parts = {}
+	for _, item in ipairs(items) do
+		if item:IsA("BasePart") then
+			table.insert(parts, item)
+		end
+	end
+	return parts
+end
+
+-- Boneco: o personagem INTEIRO clonado, com as peças reposicionadas em lote a cada atualização. Em
+-- corpo R15 a roupa é composta pelo motor a partir do conjunto — Humanoid, peças e Shirt juntos — e
+-- não mora na textura de peça nenhuma: copiando peça por peça vinha a cor e nunca a roupa.
 local function makeFigure(slot, character)
-	local model = Instance.new("Model")
+	local sourceList = character:GetDescendants()
+	local model = character:Clone()
+	local copyList = model:GetDescendants()
 	model.Name = "Figure"
 
-	local parts, sources = {}, {}
-	for _, item in ipairs(character:GetDescendants()) do
-		if item:IsA("BasePart") then
-			local copy = item:Clone()
-			stripCopy(copy)
-			copy.Parent = model
-			table.insert(parts, copy)
-			table.insert(sources, item)
+	-- O viewport pendura no PlayerGui, e script copiado ali dentro RODA; som e GUI idem.
+	for _, item in ipairs(copyList) do
+		if item:IsA("LuaSourceContainer") or item:IsA("Sound") or item:IsA("LayerCollector") then
+			item:Destroy()
 		end
+	end
+
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+
+	-- As peças saem da MESMA árvore, na mesma ordem, então casam por posição — pelo nome não dá, que
+	-- todo acessório traz um "Handle". Contagem diferente é corpo mexido no meio do clone: o boneco
+	-- entra como estátua, em vez de espelhar peça na peça errada.
+	local parts, sources = listParts(copyList), listParts(sourceList)
+	if #parts ~= #sources then
+		table.clear(parts)
+		table.clear(sources)
+	end
+
+	for _, copy in ipairs(parts) do
+		copy.Anchored = true
+		copy.CanCollide = false
+		copy.CanQuery = false
+		copy.CanTouch = false
 	end
 
 	model.Parent = slot.viewport
