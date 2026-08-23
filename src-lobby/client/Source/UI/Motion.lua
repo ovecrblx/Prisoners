@@ -3,6 +3,8 @@ local Motion = {}
 
 local TweenService = game:GetService("TweenService")
 
+local Sfx = require(script.Parent:WaitForChild("Sfx"))
+
 -- Presets de easing. Tempo em segundos.
 Motion.Hover = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 Motion.Press = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -88,7 +90,8 @@ end
 
 -- `visual` é o que escala e gira: um GuiObject ou uma lista deles. `buttons` são os
 -- GuiButton que disparam o efeito, e perdem o AutoButtonColor. config.ClickButtons
--- restringe o OnClick a um subconjunto; sem ele, vale a lista toda.
+-- restringe o OnClick a um subconjunto; sem ele, vale a lista toda. config.ClickSound
+-- troca a chave do SfxConfig no clique; sem ele, `UiClick`.
 function Motion.BindButton(visual, buttons, config)
 	config = config or {}
 
@@ -163,6 +166,7 @@ function Motion.BindButton(visual, buttons, config)
 		button.MouseEnter:Connect(function()
 			hovering = true
 			refresh()
+			Sfx.Play("UiHover")
 		end)
 
 		button.MouseLeave:Connect(function()
@@ -174,6 +178,7 @@ function Motion.BindButton(visual, buttons, config)
 		button.MouseButton1Down:Connect(function()
 			pressing = true
 			refresh()
+			Sfx.Play(config.ClickSound or "UiClick")
 		end)
 
 		button.MouseButton1Up:Connect(function()

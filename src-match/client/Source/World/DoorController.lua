@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local DoorConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("DoorConfig"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 local doors = {}
 local active = {}
@@ -150,7 +151,23 @@ local function step(delta)
 	end
 end
 
+-- O som sai preso numa peça da folha, não em 2D: porta que abre do outro lado da sala tem que soar
+-- do outro lado da sala.
+local function voice(door)
+	local part = door.model.PrimaryPart or door.model:FindFirstChildWhichIsA("BasePart", true)
+	if not part then
+		return
+	end
+
+	if door.target ~= 0 then
+		Sfx.Play("DoorOpen", part)
+	else
+		Sfx.Play(if door.dual then "DualDoorClose" else "DoorClose", part)
+	end
+end
+
 local function play(door)
+	voice(door)
 	door.from = door.angle
 	door.elapsed = 0
 	door.lead = door.hasKnob and DoorConfig.KnobTurn or 0
@@ -198,6 +215,7 @@ local function register(model)
 
 	local door = {
 		model = model,
+		dual = model.Name:sub(1, #DoorConfig.DualPrefix) == DoorConfig.DualPrefix,
 		angle = 0,
 		from = 0,
 		target = 0,

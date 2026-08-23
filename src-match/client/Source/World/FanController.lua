@@ -5,12 +5,15 @@
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
+
 local FanController = {}
 
--- Onde varrer, o Model que carrega a hélice, e o nome dela.
+-- Onde varrer, o Model que carrega a hélice, o nome dela, e o do laço de ambiente pendurado nela.
 local FOLDER = { "Siland_Home", "Decoration" }
 local FAN_NAME = "fan"
 local ROTOR_NAME = "Rot"
+local AMBIENT_NAME = "FanAmbient"
 
 -- graus/s da hélice, e o eixo do giro no espaço da própria peça.
 local SPIN_SPEED = 320
@@ -63,6 +66,15 @@ local function register(item)
 		pivot = item:GetPivot(),
 		offset = item.PivotOffset:Inverse(),
 	})
+
+	-- O laço mora NA hélice, então o "perto" é a atenuação do próprio Sound — não precisa de gatilho.
+	-- Some junto com a peça que o streaming levar, e o nome guarda contra um segundo laço.
+	if not item:FindFirstChild(AMBIENT_NAME) then
+		local ambient = Sfx.Hold("FanLoop", item)
+		if ambient then
+			ambient.Name = AMBIENT_NAME
+		end
+	end
 end
 
 local function collect(folder)

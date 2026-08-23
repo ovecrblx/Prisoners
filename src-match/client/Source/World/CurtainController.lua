@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local DoorConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("DoorConfig"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 local curtains = {}
 local active = {}
@@ -129,6 +130,15 @@ local function play(entry)
 		bar.to = targetHeight(entry.closed)
 		entry.total = math.max(entry.total, bar.delay + entry.duration)
 	end
+
+	-- Depois de `entry.total` fechar, que é a duração REAL do movimento: o escalonamento das barras
+	-- estica o curso além do tempo de uma barra só.
+	-- Dois sons, um por evento. A alavanca estala na `Right Root`, onde o jogador interage, no ritmo
+	-- autorado — é impacto, não curso. A cortina sai da primeira barra e é esticada para caber no
+	-- movimento. Fechar é descer, abrir é subir.
+	local closing = entry.closed
+	Sfx.Play(if closing then "LeverDown" else "LeverUp", entry.lever)
+	Sfx.Play(if closing then "CurtainDown" else "CurtainUp", entry.bars[1].part, entry.total)
 
 	active[entry] = true
 

@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Motion = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Motion"))
+local Sfx = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Sfx"))
 
 local DEBOUNCE = 0.4
 
@@ -152,6 +153,12 @@ function PartyController.Init()
 			return
 		end
 
+		-- O sino toca na ENTRADA no pad, não a cada atualização: o servidor reenvia o painel a cada
+		-- mudança de contagem, e sem isto tocaria a cada jogador que chegasse na fila.
+		if not panel.Visible then
+			Sfx.Play("PartyJoin")
+		end
+
 		lastStatus = status
 		lastRole = role
 		lastCount = count or lastCount
@@ -193,6 +200,7 @@ function PartyController.Start()
 			clickable.Activated:Connect(function()
 				fire("Leave")
 				hide()
+				Sfx.Play("PartyLeave")
 			end)
 		end
 	end

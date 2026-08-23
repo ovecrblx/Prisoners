@@ -17,6 +17,7 @@ local DoorConfig = require(Shared:WaitForChild("DoorConfig"))
 local NpcConfig = require(Shared:WaitForChild("NpcConfig"))
 -- Só pelo contrato da lâmpada: o nome do atributo mora no módulo que o publica.
 local SecCamController = require(script.Parent:WaitForChild("SecCamController"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 local SecMonitorController = {}
 
@@ -51,12 +52,12 @@ local VFX_MIN, VFX_MAX = 0.05, 0.18
 -- capa inerte de cada painel.
 local BACKING_NAME = "Back"
 local BACKGROUND_NAME = "Background"
-local SNOW_MIN, SNOW_MAX = 0.05, 0.12
+local SNOW_GAP = NumberRange.new(0.05, 0.12)
 local SNOW_OVERSCAN = 1.3
 
 -- Falha de sinal, uma tela por vez: s de espera até ela cair, o intervalo curto do chiado enquanto
 -- está caída, e os s longe do posto que a consertam. A espera vai de segundos a minutos.
-local GLITCH_WAIT_MIN, GLITCH_WAIT_MAX = 8, 210
+local GLITCH_WAIT = NumberRange.new(8, 210)
 local GLITCH_MIN, GLITCH_MAX = 0.02, 0.05
 local GLITCH_COLOR = Color3.new(1, 1, 1)
 local GLITCH_FADE = 0.7
@@ -93,7 +94,7 @@ local NO_SIGNAL = "No Signal"
 local SOLO_CELL = UDim2.fromScale(1, 1)
 local SOLO_FADE = 0.75
 local SWITCH_BURST = 0.35
-local FLASH_MIN, FLASH_MAX = 1, 2
+local FLASH_SPAN = NumberRange.new(1, 2)
 
 -- O direcional do solo: cada tecla do painel Control soma o próprio eixo (x guinada, y inclinação)
 -- enquanto segurada. graus/s do giro, e os tetos a partir da pose em que a lente estava.
@@ -106,6 +107,9 @@ local TURN_DIRS = {
 local TURN_SPEED = 40
 local TURN_YAW = 110
 local TURN_PITCH = 50
+
+-- s do rabo do servo: ao soltar, o efeito salta para tão perto do fim, e some tanto depois disso.
+local SERVO_TAIL, SERVO_GRACE = 0.3, 0.2
 
 -- Limites por câmera, os dois eixos no MESMO convênio: curso em graus a partir da pose de REPOUSO
 -- autorada da lente — o solo sempre abre nela, no zero. `yaw` Min à esquerda / Max à direita;
@@ -208,6 +212,53 @@ local soloBase = nil
 local soloYaw = 0
 local soloPitch = 0
 local turnHeld = {}
+-- O motor da lente, num só nome: o Sound tocando, o que está terminando, e os três gestos. Luau só
+-- dá 200 registradores por escopo, e o topo deste módulo está perto do teto — campos de tabela não
+-- gastam nenhum.
+local Servo = { sound = nil, tail = nil, noise = nil }
+
+-- Corta NA HORA, sem rabo: trocar de câmera, sair do solo, largar o posto.
+function Servo.cut()
+	if Servo.sound then
+		Servo.sound:Destroy()
+		Servo.sound = nil
+	end
+	if Servo.tail then
+		Servo.tail:Destroy()
+		Servo.tail = nil
+	end
+end
+
+-- O aperto entra no MEIO da gravação, pulando o arranque do motor.
+function Servo.start()
+	Servo.cut()
+	Servo.sound = Sfx.Hold("CamServo")
+	if Servo.sound and Servo.sound.TimeLength > 0 then
+		Servo.sound.TimePosition = Servo.sound.TimeLength / 2
+	end
+end
+
+-- Soltar salta para o rabo da gravação em vez de cortar — é a desaceleração. O Sound vive o que
+-- sobrou e sai sozinho; um aperto novo no meio disso o mata antes, pelo `cut`.
+function Servo.stop()
+	local sound = Servo.sound
+	Servo.sound = nil
+	if not sound then
+		return
+	end
+
+	Servo.tail = sound
+	if sound.TimeLength > 0 then
+		sound.TimePosition = math.max(0, sound.TimeLength - SERVO_TAIL)
+	end
+
+	task.delay(SERVO_TAIL + SERVO_GRACE, function()
+		if Servo.tail == sound then
+			Servo.tail = nil
+		end
+		sound:Destroy()
+	end)
+end
 
 -- A folha de chiado atrás da grade: a GUI da capa que a carrega, a folga que ela tem para deslizar,
 -- e quando o grão salta.
@@ -341,8 +392,9 @@ end
 -- O crescer é um UIScale dentro do alvo — Size direto brigaria com o UIGridLayout do direcional, que
 -- é dono do tamanho dos filhos. O alvo pode ser o Frame pai da tecla; os sinais vêm de `source`.
 -- AutoButtonColor sai porque tinge a tecla por conta própria, fora deste curso.
-local function dressButton(button, source)
+local function dressButton(button, source, clickKey)
 	source = source or button
+	clickKey = clickKey or "UiClick"
 	local fade = button.BackgroundTransparency
 	for _, item in ipairs({ button, source }) do
 		if item:IsA("GuiButton") then
@@ -365,6 +417,7 @@ local function dressButton(button, source)
 			local lifted = math.max(0, fade - HOVER_LIFT)
 			TweenService:Create(scale, HOVER_TWEEN, { Scale = HOVER_GROW }):Play()
 			TweenService:Create(button, HOVER_TWEEN, { BackgroundTransparency = lifted }):Play()
+			Sfx.Play("UiHover")
 		end)
 	)
 	table.insert(
@@ -380,6 +433,7 @@ local function dressButton(button, source)
 			controlLinks,
 			source.MouseButton1Down:Connect(function()
 				TweenService:Create(scale, SINK_TWEEN, { Scale = PRESS_SINK }):Play()
+				Sfx.Play(clickKey)
 			end)
 		)
 		table.insert(
@@ -399,6 +453,7 @@ local function dropControlLinks()
 	end
 	table.clear(controlLinks)
 	table.clear(turnHeld)
+	Servo.cut()
 	restoreButtons()
 	table.clear(buttonHomes)
 	hideCursor()
@@ -897,7 +952,7 @@ end
 -- Tela caída: o fundo do viewport fecha, o chiado vira branco e curto, e a cena sai de dentro dele —
 -- sem nada para desenhar sobra só o BackgroundColor3, que é como um feed morto se lê.
 local function scheduleGlitch(now)
-	glitchAt = now + GLITCH_WAIT_MIN + math.random() * (GLITCH_WAIT_MAX - GLITCH_WAIT_MIN)
+	glitchAt = now + GLITCH_WAIT.Min + math.random() * (GLITCH_WAIT.Max - GLITCH_WAIT.Min)
 end
 
 -- Painel sem sinal E escolhido fecha o próprio fundo: no solo o viewport está escondido e a tela da
@@ -929,6 +984,7 @@ end
 local function breakSlot(slot)
 	broken = slot.index
 	brokenLook(slot, true)
+	Sfx.Play("Glitch")
 	clearScene(slot)
 	clearFigures(slot)
 end
@@ -952,7 +1008,7 @@ end
 local function flashPanels()
 	local now = os.clock()
 	for _, slot in ipairs(slots) do
-		slot.flash = now + FLASH_MIN + math.random() * (FLASH_MAX - FLASH_MIN)
+		slot.flash = now + FLASH_SPAN.Min + math.random() * (FLASH_SPAN.Max - FLASH_SPAN.Min)
 	end
 end
 
@@ -988,6 +1044,7 @@ local function setSolo(index)
 		soloBase = nil
 		soloYaw, soloPitch = 0, 0
 		table.clear(turnHeld)
+		Servo.cut()
 	end
 
 	for _, slot in ipairs(slots) do
@@ -1020,6 +1077,7 @@ local function setSolo(index)
 	local opened = if changed and index then slotAt(index) else nil
 	if opened then
 		opened.burst = os.clock() + SWITCH_BURST
+		Sfx.Play("CamSwitch")
 	end
 end
 
@@ -1120,9 +1178,14 @@ local function activate()
 	SecCamController.KeepAwake(true)
 	takeView()
 
+	-- O chiado do tubo é CONTÍNUO enquanto se opera: os estouros da troca e da falha são por cima
+	-- dele, e sem o leito a sala emudecia assim que a tela expandia.
+	Servo.noise = Sfx.Hold("ScreenNoise")
+
 	-- Ocupar o posto é o mosaico entrando pela primeira vez: mesmo clarão da volta do solo, e ele
 	-- ainda cobre o tempo em que a cena está sendo montada em fatias.
 	flashPanels()
+	Sfx.Play("MonitorOn")
 
 	-- A tela só conserta com o posto vazio o tempo do intervalo: sentar de novo na hora devolve o
 	-- operador à mesma falha, senão sair e voltar seria o conserto.
@@ -1169,6 +1232,11 @@ local function deactivate()
 	live = false
 	SecCamController.KeepAwake(false)
 	releaseView()
+
+	if Servo.noise then
+		Servo.noise:Destroy()
+		Servo.noise = nil
+	end
 	leftAt = os.clock()
 	unwatchScenery()
 	syncVeil({})
@@ -1305,7 +1373,7 @@ local function step(delta)
 	-- O grão do fundo salta no próprio passo, fora do ritmo do Vfx dos painéis: junto deles o fundo
 	-- leria como um quinto feed, não como ruído do tubo.
 	if snow and now >= snowAt then
-		snowAt = now + SNOW_MIN + math.random() * (SNOW_MAX - SNOW_MIN)
+		snowAt = now + SNOW_GAP.Min + math.random() * (SNOW_GAP.Max - SNOW_GAP.Min)
 		local x = 0.5 + (math.random() * 2 - 1) * snowSlack.X
 		local y = 0.5 + (math.random() * 2 - 1) * snowSlack.Y
 		snow.Position = UDim2.fromScale(x, y)
@@ -1382,6 +1450,7 @@ local function step(delta)
 		local yawHi = if limits then limits.yaw.Max else TURN_YAW
 		local pitchLo = if limits then limits.pitch.Min else -TURN_PITCH
 		local pitchHi = if limits then limits.pitch.Max else TURN_PITCH
+
 		soloYaw = math.clamp(soloYaw + turn.X * TURN_SPEED * delta, yawLo, yawHi)
 		soloPitch = math.clamp(soloPitch + turn.Y * TURN_SPEED * delta, pitchLo, pitchHi)
 		target = CFrame.new(soloBase.position)
@@ -1489,6 +1558,7 @@ unbind = function()
 		booth:Destroy()
 		booth = nil
 	end
+	seat = nil
 	prompt = nil
 	deskLamp = nil
 	deskLed = nil
@@ -1505,6 +1575,11 @@ local function pressPower()
 	end
 	pressing = true
 	pressedAt = os.clock()
+
+	-- O estalo mora AQUI, e não no `dressButton`: a tecla recebe o gesto por um Frame de hover, e o
+	-- ramo de clique de lá só liga em GuiButton. Este é o funil dos dois caminhos — o TextButton
+	-- autorado e o painel por cima —, e o trinco de `pressing` já impede o disparo dobrado.
+	Sfx.Play("Power")
 
 	task.delay(POWER_DELAY, function()
 		pressing = false
@@ -1699,19 +1774,26 @@ attach = function(index, panel)
 
 	-- O direcional: segurar vira, soltar para — Activated não serve, o gesto é contínuo. Arrastar
 	-- para fora da tecla solta também, senão o giro ficaria preso com o botão do mouse já livre.
+	-- O servo nasce NO clique, junto do estalo da tecla, e não no passo seguinte: um quadro de atraso
+	-- é o bastante para os dois soarem em fila em vez de juntos. E cada aperto abre um Sound novo,
+	-- que é o que o faz recomeçar do zero. Soltar uma tecla com outra ainda segurada não cala.
 	for direction in pairs(TURN_DIRS) do
 		local arm = pad and pad:FindFirstChild(direction)
 		local button = arm and arm:FindFirstChildWhichIsA("GuiButton", true)
 		if button then
+			local function release()
+				turnHeld[direction] = nil
+				if not next(turnHeld) then
+					Servo.stop()
+				end
+			end
+
 			table.insert(controlLinks, button.MouseButton1Down:Connect(function()
 				turnHeld[direction] = true
+				Servo.start()
 			end))
-			table.insert(controlLinks, button.MouseButton1Up:Connect(function()
-				turnHeld[direction] = nil
-			end))
-			table.insert(controlLinks, button.MouseLeave:Connect(function()
-				turnHeld[direction] = nil
-			end))
+			table.insert(controlLinks, button.MouseButton1Up:Connect(release))
+			table.insert(controlLinks, button.MouseLeave:Connect(release))
 			dressButton(arm, button)
 		end
 	end

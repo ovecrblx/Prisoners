@@ -7,6 +7,8 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
+
 local SCREEN_GUI_NAME = "ProximityPrompts"
 
 -- Medidas do prompt padrão, em pixels.
@@ -343,6 +345,7 @@ local function createPrompt(prompt, inputType, gui)
 		table.insert(holdEnd, TweenService:Create(progress, TWEEN_RELEASE, { Value = 0 }))
 
 		holdBeganConnection = prompt.PromptButtonHoldBegan:Connect(function()
+			Sfx.Play("Prompt")
 			for _, tween in ipairs(holdBegin) do
 				tween:Play()
 			end
