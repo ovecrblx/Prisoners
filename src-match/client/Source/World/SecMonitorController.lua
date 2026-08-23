@@ -73,11 +73,22 @@ local POWER_DELAY = 0.5
 -- Painel transparente por cima da tecla: é ele que recebe o hover e o clique.
 local HOVER_NAME = "PowerHover"
 
--- Feed em solo: os botões que entram e saem dele, e a célula que faz um painel ocupar a grade toda.
+-- Efeito das teclas da tela: quanto crescem sob o ponteiro, quanto afundam no clique, quanto do
+-- fundo revelam apontadas, e o curso de cada movimento.
+local HOVER_GROW = 1.06
+local PRESS_SINK = 0.95
+local HOVER_LIFT = 0.25
+local HOVER_TWEEN = TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+local SINK_TWEEN = TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+
+-- Feed em solo: os botões que entram e saem dele, a célula que faz um painel ocupar a grade toda, e
+-- os s de chiado que cobrem a troca de janela.
 local VIEW_NAME = "View"
 local BACK_NAME = "Back"
+local VALUE_NAME = "Value"
 local NO_SIGNAL = "No Signal"
 local SOLO_CELL = UDim2.fromScale(1, 1)
+local SWITCH_BURST = 0.35
 
 -- Corte preto que cobre a troca de vista: s parado no preto, curso do desvanecer, e a ordem que o
 -- põe acima de tudo, cursor incluso.
@@ -168,11 +179,13 @@ local booth = nil
 local deskLamp = nil
 local deskLed = nil
 
--- A tecla de desligar, a pose dela em repouso, o clique preso e o passo da lâmpada da cabine.
+-- A tecla de desligar, a pose dela em repouso, o clique preso, a pose autorada de cada tecla da tela
+-- e o passo da lâmpada da cabine.
 local boundMonitor = nil
 local powerPart = nil
 local powerHome = nil
 local controlLinks = {}
+local buttonHomes = {}
 local hoverPad = nil
 local pressing = false
 local lamp = nil
@@ -267,11 +280,70 @@ local function watchHover(button)
 	end))
 end
 
+local function scaledBy(size, factor)
+	return UDim2.new(size.X.Scale * factor, size.X.Offset * factor, size.Y.Scale * factor, size.Y.Offset * factor)
+end
+
+-- A cabine sobrevive à sessão, e largar o posto não dispara MouseLeave: sem devolver a pose autorada,
+-- a tecla ficaria crescida esperando um ponteiro que já não está lá.
+local function restoreButtons()
+	for _, home in ipairs(buttonHomes) do
+		if home.button.Parent then
+			home.button.Size = home.size
+			home.button.BackgroundTransparency = home.fade
+		end
+	end
+end
+
+-- Toda tecla da tela reage igual: cresce e fecha o fundo sob o ponteiro, afunda no clique e volta.
+-- Tecla coberta por painel de hover recebe os sinais pelo painel, e o movimento continua na tecla.
+-- AutoButtonColor sai porque tinge a tecla por conta própria, fora deste curso.
+local function dressButton(button, source)
+	source = source or button
+	local home, fade = button.Size, button.BackgroundTransparency
+	local big, small = scaledBy(home, HOVER_GROW), scaledBy(home, PRESS_SINK)
+	button.AutoButtonColor = false
+	table.insert(buttonHomes, { button = button, size = home, fade = fade })
+
+	table.insert(
+		controlLinks,
+		source.MouseEnter:Connect(function()
+			local lifted = math.max(0, fade - HOVER_LIFT)
+			TweenService:Create(button, HOVER_TWEEN, { Size = big, BackgroundTransparency = lifted }):Play()
+		end)
+	)
+	table.insert(
+		controlLinks,
+		source.MouseLeave:Connect(function()
+			TweenService:Create(button, HOVER_TWEEN, { Size = home, BackgroundTransparency = fade }):Play()
+		end)
+	)
+
+	if source:IsA("GuiButton") then
+		table.insert(
+			controlLinks,
+			source.MouseButton1Down:Connect(function()
+				TweenService:Create(button, SINK_TWEEN, { Size = small }):Play()
+			end)
+		)
+		table.insert(
+			controlLinks,
+			source.MouseButton1Up:Connect(function()
+				TweenService:Create(button, SINK_TWEEN, { Size = big }):Play()
+			end)
+		)
+	end
+
+	watchHover(source)
+end
+
 local function dropControlLinks()
 	for _, link in ipairs(controlLinks) do
 		link:Disconnect()
 	end
 	table.clear(controlLinks)
+	restoreButtons()
+	table.clear(buttonHomes)
 	hideCursor()
 	lamp = nil
 	powerPart = nil
@@ -724,9 +796,39 @@ end
 
 -- A cabine nasce ao sentar: clone local do Viewer_Model, com o monitor REAL dentro — tela, tecla e
 -- Viewer_Cam. Só o operador a tem, então a privacidade dos feeds continua de graça.
+local function slotAt(index)
+	for _, slot in ipairs(slots) do
+		if slot.index == index then
+			return slot
+		end
+	end
+	return nil
+end
+
+-- A ordem de `slots` é a de chegada pelo streaming, não a dos rótulos: a troca segue o NÚMERO da
+-- câmera, senão a CAM 1 levaria à CAM 3.
+local function nextIndex(from)
+	local order = {}
+	for _, slot in ipairs(slots) do
+		table.insert(order, slot.index)
+	end
+	if #order == 0 then
+		return nil
+	end
+
+	table.sort(order)
+	for _, index in ipairs(order) do
+		if index > from then
+			return index
+		end
+	end
+	return order[1]
+end
+
 -- Um feed sozinho na tela: os outros painéis saem, e a célula da grade cresce para a tela inteira.
 -- `Back` só existe no solo, e é ele quem devolve a célula autorada e traz os quatro de volta.
 local function setSolo(index)
+	local changed = solo ~= index
 	solo = index
 	if grid then
 		grid.CellSize = if index then SOLO_CELL else gridCell
@@ -743,6 +845,13 @@ local function setSolo(index)
 		if slot.back then
 			slot.back.Visible = alone
 		end
+	end
+
+	-- Corte seco entre câmeras leria como a MESMA lente girando: o estouro curto de chiado é o que
+	-- marca que a janela trocou.
+	local opened = if changed and index then slotAt(index) else nil
+	if opened then
+		opened.burst = os.clock() + SWITCH_BURST
 	end
 end
 
@@ -895,7 +1004,10 @@ local function deactivate()
 			slot.rec.TextColor3 = slot.recBase
 		end
 		slot.lampLevel = nil
+		slot.burst = 0
+		slot.bursting = false
 	end
+	restoreButtons()
 
 	-- A grade volta ao arranjo autorado: quem sentar depois começa com os quatro feeds, não no solo
 	-- que o operador anterior deixou.
@@ -1036,8 +1148,19 @@ local function step(delta)
 			end
 		end
 
+		-- O estouro da troca de janela DESVANECE em vez de piscar: cor e ritmo entram nos da falha e
+		-- escorrem de volta aos autorados ao longo da janela, e a troca lê como sinal reassentando.
+		local heat = math.clamp((slot.burst - now) / SWITCH_BURST, 0, 1)
+		if heat > 0 or slot.bursting then
+			slot.bursting = heat > 0
+			if slot.vfx and slot.index ~= broken then
+				slot.vfx.ImageColor3 = slot.vfxColor:Lerp(GLITCH_COLOR, heat)
+			end
+		end
+
 		if slot.vfx and now >= slot.vfxAt then
-			local low, high = VFX_MIN, VFX_MAX
+			local low = VFX_MIN + (GLITCH_MIN - VFX_MIN) * heat
+			local high = VFX_MAX + (GLITCH_MAX - VFX_MAX) * heat
 			if slot.index == broken then
 				low, high = GLITCH_MIN, GLITCH_MAX
 			end
@@ -1158,7 +1281,7 @@ bindControl = function(monitor)
 				end
 			end)
 		)
-		watchHover(pad)
+		dressButton(button, pad)
 	end
 
 	print(
@@ -1211,7 +1334,7 @@ attach = function(index, panel)
 	camera.Parent = viewport
 	viewport.CurrentCamera = camera
 
-	local value = panel:FindFirstChild("Value")
+	local value = panel:FindFirstChild(VALUE_NAME)
 	if value and value:IsA("TextButton") then
 		value.Text = "CAM " .. index
 	end
@@ -1242,6 +1365,8 @@ attach = function(index, panel)
 		vfxColor = vfx and vfx.ImageColor3,
 		vfxFade = vfx and vfx.ImageTransparency,
 		vfxAt = 0,
+		burst = 0,
+		bursting = false,
 		backingBase = viewport.BackgroundTransparency,
 		figures = {},
 		copies = {},
@@ -1260,13 +1385,22 @@ attach = function(index, panel)
 		table.insert(controlLinks, view.Activated:Connect(function()
 			setSolo(index)
 		end))
-		watchHover(view)
+		dressButton(view)
 	end
 	if back and back:IsA("GuiButton") then
 		table.insert(controlLinks, back.Activated:Connect(function()
 			setSolo(nil)
 		end))
-		watchHover(back)
+		dressButton(back)
+	end
+
+	-- O rótulo é a tecla de trocar de janela: no mosaico ele abre a própria câmera, e no solo passa
+	-- para a seguinte sem devolver o operador ao mosaico entre uma e outra.
+	if value and value:IsA("GuiButton") then
+		table.insert(controlLinks, value.Activated:Connect(function()
+			setSolo(if solo == nil then index else nextIndex(index))
+		end))
+		dressButton(value)
 	end
 
 	-- Chegou com o posto já ocupado: entra com a cena montada, não preta até o próximo sentar. Se for
