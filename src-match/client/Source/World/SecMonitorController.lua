@@ -46,12 +46,11 @@ local VFX_NAME = "Vfx"
 local VFX_SWING = 0.3
 local VFX_MIN, VFX_MAX = 0.05, 0.18
 
--- Chiado do fundo da tela: s entre saltos do grão, e quanto o ladrilho e a transparência variam em
--- volta do autorado. O nome também é o da capa inerte de cada painel.
+-- Chiado do fundo da tela: s entre saltos do grão, e quanto a folha passa da tela para ter folga
+-- onde deslizar. O nome também é o da capa inerte de cada painel.
 local BACKGROUND_NAME = "Background"
-local SNOW_MIN, SNOW_MAX = 0.01, 0.035
-local SNOW_SWING = 0.45
-local SNOW_FADE = 0.12
+local SNOW_MIN, SNOW_MAX = 0.05, 0.12
+local SNOW_OVERSCAN = 1.3
 
 -- Falha de sinal, uma tela por vez: s de espera até ela cair, o intervalo curto do chiado enquanto
 -- está caída, e os s longe do posto que a consertam. A espera vai de segundos a minutos.
@@ -159,10 +158,9 @@ local grid = nil
 local gridCell = nil
 local solo = nil
 
--- A folha de chiado atrás da grade: o ladrilho e a transparência autorados, e quando o grão salta.
+-- A folha de chiado atrás da grade: a folga que ela tem para deslizar, e quando o grão salta.
 local snow = nil
-local snowTile = nil
-local snowFade = 0
+local snowSlack = Vector2.zero
 local snowAt = 0
 
 -- A cabine clonada do operador, e a lâmpada da mesa decorativa, que pisca para quem passa.
@@ -752,14 +750,16 @@ local function buildBooth()
 	surface = childLike(surfaceHome, SLOT_PATH[2])
 	viewer = childLike(monitor, VIEWER_NAME)
 
-	-- A folha é autorada esticada, e esticada uma textura de ruído vira mancha: ladrilhada, cada
-	-- repetição vira grão, que é o que o chiado é.
+	-- Ladrilhada e maior que a tela: o grão guarda o tamanho e é a folha que desliza dentro da folga.
+	-- Embaralhar o chiado esticando o ladrilho fazia o grão respirar, que lê como zoom, não como ruído.
 	local sheet = surface and surface:FindFirstChild(BACKGROUND_NAME)
 	snow = if sheet and sheet:IsA("ImageLabel") then sheet else nil
 	if snow then
+		local size = snow.Size
 		snow.ScaleType = Enum.ScaleType.Tile
-		snowTile = snow.TileSize
-		snowFade = snow.ImageTransparency
+		snow.AnchorPoint = Vector2.new(0.5, 0.5)
+		snow.Size = UDim2.fromScale(size.X.Scale * SNOW_OVERSCAN, size.Y.Scale * SNOW_OVERSCAN)
+		snowSlack = Vector2.new(size.X.Scale, size.Y.Scale) * ((SNOW_OVERSCAN - 1) * 0.5)
 	end
 
 	grid = frame:FindFirstChildOfClass("UIGridLayout")
@@ -968,11 +968,9 @@ local function step(delta)
 	-- leria como um quinto feed, não como ruído do tubo.
 	if snow and now >= snowAt then
 		snowAt = now + SNOW_MIN + math.random() * (SNOW_MAX - SNOW_MIN)
-		local x = 1 + (math.random() * 2 - 1) * SNOW_SWING
-		local y = 1 + (math.random() * 2 - 1) * SNOW_SWING
-		local tile = snowTile
-		snow.TileSize = UDim2.new(tile.X.Scale * x, tile.X.Offset * x, tile.Y.Scale * y, tile.Y.Offset * y)
-		snow.ImageTransparency = math.clamp(snowFade + (math.random() * 2 - 1) * SNOW_FADE, 0, 1)
+		local x = 0.5 + (math.random() * 2 - 1) * snowSlack.X
+		local y = 0.5 + (math.random() * 2 - 1) * snowSlack.Y
+		snow.Position = UDim2.fromScale(x, y)
 	end
 
 	sinceScene += delta
