@@ -2,6 +2,7 @@
 -- não desenha o mundo, só o que está dentro dele — então o feed é uma cópia do cenário inteiro,
 -- com porta espelhada quando se move, mais os corpos vivos, jogadores e NPCs, redesenhados por
 -- quadro. Tudo local, e só montado para quem ocupa o posto.
+local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -537,8 +538,21 @@ local function isCamPart(item)
 	return false
 end
 
+-- Peça invisível ainda desenha o Decal que carrega — a cortina de escritório é autorada assim, o
+-- pano é só o Decal num Part transparente. Cortá-la pela Transparency abria buraco no feed.
 local function wantedInScene(item)
-	return item:IsA("BasePart") and item.Transparency < 1 and not isCamPart(item)
+	if not item:IsA("BasePart") or isCamPart(item) then
+		return false
+	end
+	if item.Transparency < 1 then
+		return true
+	end
+	for _, child in ipairs(item:GetChildren()) do
+		if child:IsA("Decal") and child.Transparency < 1 then
+			return true
+		end
+	end
+	return false
 end
 
 -- A caixa do nome não tem cobertura, então a peça pertence ao modelo ignorado por nome minúsculo,
@@ -624,6 +638,20 @@ local function buildScene(slot)
 				spent = 0
 				RunService.PostSimulation:Wait()
 			end
+		end
+
+		-- Textura de Decal só é buscada quando o viewport a desenha pela primeira vez, e sai cinza até
+		-- chegar; puxar agora cobre a janela de quem acabou de sentar.
+		local decals = {}
+		for _, item in ipairs(scene:GetDescendants()) do
+			if item:IsA("Decal") then
+				table.insert(decals, item)
+			end
+		end
+		if #decals > 0 and slot.scene == scene then
+			pcall(function()
+				ContentProvider:PreloadAsync(decals)
+			end)
 		end
 	end)
 
