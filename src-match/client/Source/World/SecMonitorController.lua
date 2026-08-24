@@ -164,8 +164,9 @@ local FEED_FOV = 90
 -- graus do cone em que um corpo vivo vira boneco no feed; atrás da lente ninguém aparece.
 local FIGURE_HALF = math.rad(50)
 
--- s entre atualizações dos bonecos e entre verificações de presença na mesa.
-local FIGURE_INTERVAL = 1 / 15
+-- s entre atualizações dos bonecos e entre verificações de presença na mesa. 10 quadros/s é o passo
+-- dos sistemas de CCTV de referência, e em tela de vigilância lê como vídeo, não como jogo.
+local FIGURE_INTERVAL = 1 / 10
 local CHECK_INTERVAL = 0.5
 
 -- s de espera pela pasta no boot.
@@ -1379,8 +1380,10 @@ local function step(delta)
 		snow.Position = UDim2.fromScale(x, y)
 	end
 
+	-- No solo os quatro viewports estão escondidos e as poses guardadas ficam velhas de propósito: a
+	-- volta ao mosaico compara contra elas e a primeira passada emparelha tudo que se moveu.
 	sinceScene += delta
-	if sinceScene >= SCENE_SYNC_INTERVAL then
+	if sinceScene >= SCENE_SYNC_INTERVAL and solo == nil then
 		sinceScene = 0
 		syncScenery()
 	end
