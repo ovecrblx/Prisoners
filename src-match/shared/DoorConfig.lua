@@ -48,10 +48,14 @@ DoorConfig.NpcCloseRadius = 11
 DoorConfig.Easing = Enum.EasingStyle.Quad
 DoorConfig.EasingDirection = Enum.EasingDirection.Out
 
--- Alavanca: orientação em graus de cada estado, e a cor do Indicator que acompanha. Vira com
--- passada, e a luz troca quando ela cruza o meio do curso.
-DoorConfig.LeverOff = Vector3.new(-45, 90, 90)
-DoorConfig.LeverOn = Vector3.new(-45, -90, -90)
+-- Alavanca: giro em graus SOMADO à pose em que ela foi publicada, em torno do eixo local do Part.
+-- 0 é a pose do cenário. Orientação absoluta reconstruía a rotação inteira e desalinhava a alavanca
+-- da placa. Y é a dobradiça: aponta na horizontal, e o braço sai do pivô ao longo do X local, então o
+-- giro joga a ponta para cima e para baixo. Sinal invertido troca qual lado é o ligado.
+-- A cor do Indicator acompanha, e troca quando ela cruza o meio do curso.
+DoorConfig.LeverAxis = Vector3.yAxis
+DoorConfig.LeverOffAngle = 0
+DoorConfig.LeverOnAngle = 90
 DoorConfig.IndicatorOff = Color3.fromRGB(255, 89, 89)
 DoorConfig.IndicatorOn = Color3.fromRGB(75, 151, 75)
 DoorConfig.LeverTime = 0.28
@@ -157,9 +161,8 @@ function DoorConfig.Curtains(model)
 	return parts
 end
 
-function DoorConfig.LeverPose(pivot, orientation)
-	local rotation = CFrame.fromOrientation(math.rad(orientation.X), math.rad(orientation.Y), math.rad(orientation.Z))
-	return CFrame.new(pivot) * rotation
+function DoorConfig.LeverPose(rest, degrees)
+	return rest * CFrame.fromAxisAngle(DoorConfig.LeverAxis, math.rad(degrees))
 end
 
 function DoorConfig.SideOf(hinges, normal, position)

@@ -67,10 +67,10 @@ local function resolve(entry)
 		return true
 	end
 
-	local pivot = lever:GetPivot().Position
+	local rest = lever:GetPivot()
 	entry.lever = lever
-	entry.off = DoorConfig.LeverPose(pivot, DoorConfig.LeverOff)
-	entry.on = DoorConfig.LeverPose(pivot, DoorConfig.LeverOn)
+	entry.off = DoorConfig.LeverPose(rest, DoorConfig.LeverOffAngle)
+	entry.on = DoorConfig.LeverPose(rest, DoorConfig.LeverOnAngle)
 	entry.indicator = entry.model:FindFirstChild(DoorConfig.IndicatorName)
 	entry.throw = 0
 	entry.light = 0
