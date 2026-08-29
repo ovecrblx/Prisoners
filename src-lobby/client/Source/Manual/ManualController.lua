@@ -1,14 +1,15 @@
--- Cliente do caderno: slot no HUD, câmera diegética e virada de páginas por raycast nas
--- hitboxes. Toda conexão entra em session.links (slot/hold/tecla) ou use.links (modo em uso)
--- e morre no release() — o modo em uso entra e sai várias vezes e conexão órfã duplicaria gesto.
+-- Caderno do próprio jogador: slot no HUD, câmera diegética e virada de páginas por raycast nas
+-- hitboxes. Equipar, guardar e alternar cintura/mão acontecem aqui e valem no mesmo quadro; o
+-- servidor é avisado depois, só para os outros clientes desenharem. O eco do servidor não volta
+-- para cá, então dois toques rápidos não brigam com a latência.
+-- Toda conexão entra em session.links (slot/hold/tecla) ou use.links (modo em uso) e morre no
+-- release() — o modo em uso entra e sai várias vezes e conexão órfã duplicaria gesto.
 -- O HUD é o template ImageButton dentro de ManualGui.Hud: Press leva a imagem do item, Key o
 -- rótulo da tecla, Fill o progresso do hold. O template fica invisível; cada item é um clone.
 -- ManualGui e MainGui são irmãs: o modo em uso desliga só a MainGui.
 -- No modo em uso a câmera orbita o ponto de mira do livro com o topo no mundo: segue a posição
--- dele, nunca a rotação, então o horizonte não tomba e a vista não gira junto com a mão. Mira,
--- yaw, pitch e distância são do jogador — botão direito ou arrasto giram, botão do meio move a
--- mira, roda e pinça aproximam. O livro não lê nada da câmera, então girar a vista nunca move a
--- pose. Com CalibrateCamera um painel mostra os quatro valores vivos e CameraDumpKey imprime.
+-- dele, nunca a rotação, então o horizonte não tomba e a vista não gira junto com a mão. Com
+-- CalibrateCamera um painel mostra os quatro valores vivos e CameraDumpKey imprime.
 local ManualController = {}
 
 local Players = game:GetService("Players")
@@ -18,6 +19,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local MenuController = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MenuController"))
+local ManualView = require(script.Parent:WaitForChild("ManualView"))
 local ManualConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ManualConfig"))
 
 -- Valores visuais do slot provisório, até a arte final.
@@ -28,29 +30,20 @@ local FILL_FULL = UDim2.fromScale(1, 1)
 
 local FILL_RESET_TIME = 0.2 -- segundos para o Fill recuar em hold cancelado
 local MOVE_SPEED_THRESHOLD = 0.5 -- velocidade de Running que fecha o caderno
-local REPLICA_GRACE = 0.5 -- segundos tolerando a réplica do caderno sumir antes de desistir
 
 -- CurrentCamera é recriada no spawn: sempre resolver na hora, nunca guardar no boot.
 local player = Players.LocalPlayer
 
 local toggleModeRemote
 local unequipRemote
-local toggleButtonRemote
-local updateStateRemote
 
 local playerGui
 local gui, slot, press, fill
 
 local session = { links = {}, holdTween = nil, holdStart = 0, bound = false }
-local use = {
-	links = {},
-	angles = {},
-	pageTweens = {},
-	hitboxes = {},
-	actions = {},
-	active = false,
-	token = 0,
-}
+local use = { links = {}, hitboxes = {}, actions = {}, active = false, token = 0 }
+local equipped = false
+local inHand = false
 local currentPage = 1
 local hiddenAccessories = {}
 local holdTrack
@@ -64,6 +57,8 @@ local drag
 local pinchScale
 local anchor
 local readout
+
+local setHand
 
 local function resetOrbit()
 	orbit.yaw = math.rad(ManualConfig.CameraYaw)
@@ -123,44 +118,6 @@ local function resetHold(instant)
 	end
 end
 
-local function startHold()
-	if session.holdTween then
-		return
-	end
-	session.holdStart = os.clock()
-
-	fill.Size = FILL_HIDDEN
-
-	local tween = TweenService:Create(
-		fill,
-		TweenInfo.new(ManualConfig.HoldTime, Enum.EasingStyle.Linear),
-		{ Size = FILL_FULL }
-	)
-	session.holdTween = tween
-	tween.Completed:Connect(function(state)
-		if state ~= Enum.PlaybackState.Completed then
-			return
-		end
-		session.holdTween = nil
-		-- Soltar depois do disparo não pode virar clique curto.
-		session.holdStart = 0
-		resetHold(true)
-		unequipRemote:FireServer()
-	end)
-	tween:Play()
-end
-
-local function stopHold()
-	if not session.holdTween then
-		return
-	end
-	local held = os.clock() - session.holdStart
-	resetHold(false)
-	if session.holdStart > 0 and held < ManualConfig.HoldTime then
-		toggleModeRemote:FireServer()
-	end
-end
-
 local function isPress(input)
 	return input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch
@@ -183,33 +140,6 @@ local function dragTo(position)
 	if drag.moved then
 		orbitBy(delta.X, delta.Y)
 	end
-end
-
-local function bindButton()
-	if session.bound then
-		return
-	end
-	session.bound = true
-
-	table.insert(session.links, press.InputBegan:Connect(function(input)
-		if isPress(input) then
-			startHold()
-		end
-	end))
-	table.insert(session.links, press.InputEnded:Connect(function(input)
-		if isPress(input) then
-			stopHold()
-		end
-	end))
-	table.insert(session.links, press.MouseLeave:Connect(stopHold))
-	table.insert(session.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-		if input.KeyCode == ManualConfig.HotKey and gui.Enabled then
-			toggleModeRemote:FireServer()
-		end
-	end))
 end
 
 -- Painel de calibração, montado em código: a ManualGui publicada não tem lugar para ele.
@@ -273,94 +203,43 @@ local function restoreAccessories()
 	table.clear(hiddenAccessories)
 end
 
-local function clearPages()
-	for _, tween in pairs(use.pageTweens) do
-		tween:Cancel()
-	end
-	for _, proxy in pairs(use.angles) do
-		proxy:Destroy()
-	end
-	table.clear(use.pageTweens)
-	table.clear(use.angles)
+local function turnTo(character, index)
+	currentPage = index
+	ManualView.SetPage(character, index)
 end
 
--- A virada passa por um NumberValue em graus, não pelo C1 direto: a meia-volta entre empilhada e
--- virada é de 180 graus exatos, onde a interpolação de rotação não tem lado definido e o engine
--- escolhe um. Em graus o sinal de StackAngle manda no lado.
-local function animatePages()
-	for index, pageName in ipairs(ManualConfig.PageOrder) do
-		local proxy = use.angles[pageName]
-		if proxy then
-			local running = use.pageTweens[pageName]
-			if running then
-				running:Cancel()
-			end
-			local angle = if index < currentPage then 0 else ManualConfig.StackAngle
-			local tween = TweenService:Create(proxy, ManualConfig.PageTween, { Value = angle })
-			use.pageTweens[pageName] = tween
-			tween:Play()
-		end
-	end
-end
-
-local function buildBook(manual)
-	local handle = manual:WaitForChild("Handle", 1)
-	if not handle then
-		warn("[Manual] Handle não replicou a tempo para o modo uso")
-		return
-	end
-
-	clearPages()
+local function bindHitboxes(character, view)
 	table.clear(use.hitboxes)
 	table.clear(use.actions)
-	use.handle = handle
+	use.handle = view.handle
 
-	for index, pageName in ipairs(ManualConfig.PageOrder) do
-		-- O servidor recria juntas logo após a solda; a réplica delas pode chegar depois do
-		-- UpdateManualState.
-		local pagePart = manual:WaitForChild(pageName, 1)
-		local motor = handle:WaitForChild(pageName .. "Motor", 1)
-		if pagePart and pagePart:IsA("BasePart") and motor and motor:IsA("Motor6D") then
-			local base = CFrame.new(motor.C1.Position)
+	for _, page in pairs(view.pages) do
+		local top = page.part:FindFirstChild("Hitbox_Top")
+		if top and top:IsA("BasePart") then
+			table.insert(use.hitboxes, top)
+			use.actions[top] = function()
+				turnTo(character, page.index)
+			end
+		end
 
-			local proxy = Instance.new("NumberValue")
-			proxy.Value = ManualConfig.StackAngle
-			use.angles[pageName] = proxy
-			table.insert(use.links, proxy.Changed:Connect(function(value)
-				motor.C1 = base * CFrame.Angles(0, 0, math.rad(value))
-			end))
-
-			local top = pagePart:FindFirstChild("Hitbox_Top")
-			if top and top:IsA("BasePart") then
-				table.insert(use.hitboxes, top)
-				use.actions[top] = function()
-					currentPage = index
-					animatePages()
+		local bottom = page.part:FindFirstChild("Hitbox_Bottom")
+		if bottom and bottom:IsA("BasePart") then
+			table.insert(use.hitboxes, bottom)
+			use.actions[bottom] = function()
+				-- Verso só navega em página já virada; na ativa o clique é ruído.
+				if currentPage ~= page.index then
+					turnTo(character, page.index)
 				end
 			end
-
-			local bottom = pagePart:FindFirstChild("Hitbox_Bottom")
-			if bottom and bottom:IsA("BasePart") then
-				table.insert(use.hitboxes, bottom)
-				use.actions[bottom] = function()
-					-- Verso só navega em página já virada; na ativa o clique é ruído.
-					if currentPage ~= index then
-						currentPage = index
-						animatePages()
-					end
-				end
-			end
-		else
-			warn("[Manual] página " .. pageName .. " ou motor ausente no acessório")
 		end
 	end
 
-	local backCover = manual:FindFirstChild(ManualConfig.BackCoverName)
+	local backCover = view.model:FindFirstChild(ManualConfig.BackCoverName)
 	local closeBox = backCover and backCover:FindFirstChild("Hitbox_Top")
 	if closeBox and closeBox:IsA("BasePart") then
 		table.insert(use.hitboxes, closeBox)
 		use.actions[closeBox] = function()
-			toggleModeRemote:FireServer()
+			setHand(false)
 		end
 	end
 end
@@ -379,10 +258,8 @@ local function onTap()
 	end
 end
 
--- Animação de segurar: toca aqui no dono — em personagem de jogador a replicação de
--- animação é cliente -> servidor, nunca o contrário. Carregada na hora em que o caderno é
--- equipado, não no primeiro uso: o servidor amostra a mão animada para montar o C0, e uma
--- animação que só começa a buscar o asset no toggle chega depois da amostragem terminar.
+-- Animação de segurar: em personagem de jogador a replicação de animação é cliente -> servidor,
+-- nunca o contrário, então quem vê o braço subir nos outros é este track tocando no dono deles.
 local function ensureTrack(character)
 	if holdTrack and holdTrackCharacter == character then
 		return holdTrack
@@ -408,6 +285,7 @@ end
 
 local function exitUse()
 	use.token += 1
+	currentPage = 1
 	if not use.active then
 		return
 	end
@@ -421,7 +299,6 @@ local function exitUse()
 		link:Disconnect()
 	end
 	table.clear(use.links)
-	clearPages()
 	table.clear(use.hitboxes)
 	table.clear(use.actions)
 	use.handle = nil
@@ -452,23 +329,13 @@ local function enterUse()
 	local token = use.token
 
 	local character = player.Character
-	if not character then
-		return
-	end
-	-- O evento pode chegar antes do modelo replicar no personagem.
-	local manual = character:FindFirstChild(ManualConfig.ModelName)
-		or character:WaitForChild(ManualConfig.ModelName, 2)
-	if use.token ~= token then
-		return
-	end
-	if not manual then
-		warn("[Manual] modelo não replicou a tempo para o modo uso")
+	local view = character and ManualView.Get(character)
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not (view and root) then
 		return
 	end
 	use.active = true
 
-	-- Antes de buildBook, que rende em três WaitForChild: o servidor começa a amostrar a mão
-	-- assim que manda este evento, e a animação atrasada faria a amostragem pegar a mão parada.
 	local track = ensureTrack(character)
 	if track then
 		track:Play()
@@ -480,28 +347,8 @@ local function enterUse()
 		mainGui.Enabled = false
 	end
 	hideAccessories()
-	buildBook(manual)
-	-- buildBook rende: sem este corte, um exitUse durante o yield deixaria o RenderStepped
-	-- abaixo fora de use.links, sem quem desconecte.
+	bindHitboxes(character, view)
 	if use.token ~= token then
-		return
-	end
-
-	-- Um disparo só: Running repete antes da resposta do servidor, e o segundo toggle
-	-- reabriria o caderno.
-	local interrupted = false
-	local function interrupt()
-		if interrupted then
-			return
-		end
-		interrupted = true
-		toggleModeRemote:FireServer()
-	end
-
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then
-		warn("[Manual] HumanoidRootPart ausente no modo uso")
-		exitUse()
 		return
 	end
 
@@ -514,34 +361,13 @@ local function enterUse()
 	-- câmera -> personagem que AutoRotate fecha.
 	local baseYaw = select(2, root.CFrame:ToOrientation())
 	workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-	-- Se o modelo sumir, re-resolve em vez de sair no primeiro frame sem Parent; só desiste
-	-- depois de REPLICA_GRACE sem ele voltar.
-	local missingSince
 	table.insert(use.links, RunService.RenderStepped:Connect(function(delta)
-		if character.Parent == nil or root.Parent == nil then
-			exitUse()
-			return
-		end
-		if manual.Parent == nil then
-			local replacement = character:FindFirstChild(ManualConfig.ModelName)
-			if replacement and replacement ~= manual then
-				manual = replacement
-				task.spawn(buildBook, manual)
-			end
-		end
-		if manual.Parent == nil then
-			missingSince = missingSince or os.clock()
-			if os.clock() - missingSince > REPLICA_GRACE then
-				exitUse()
-			end
-			return
-		end
-		missingSince = nil
-
 		local handle = use.handle
-		if not handle or handle.Parent == nil then
+		if character.Parent == nil or root.Parent == nil or not handle or handle.Parent == nil then
+			setHand(false)
 			return
 		end
+
 		local target = (handle.CFrame * CFrame.new(focus)).Position
 		if anchor then
 			anchor = anchor:Lerp(target, 1 - math.exp(-ManualConfig.CameraSmoothing * delta))
@@ -572,19 +398,18 @@ local function enterUse()
 
 		table.insert(use.links, humanoid.Running:Connect(function(speed)
 			if speed > MOVE_SPEED_THRESHOLD then
-				interrupt()
+				setHand(false)
 			end
 		end))
 		table.insert(use.links, humanoid.Jumping:Connect(function(active)
 			if active then
-				interrupt()
+				setHand(false)
 			end
 		end))
 	end
 
 	-- Fora da calibração a vista é a de ManualConfig e nada a move: o clique só vira página.
-	local calibrating = ManualConfig.CalibrateCamera
-	if not calibrating then
+	if not ManualConfig.CalibrateCamera then
 		table.insert(use.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			if gameProcessed then
 				return
@@ -593,12 +418,6 @@ local function enterUse()
 				onTap()
 			end
 		end))
-
-		task.delay(ManualConfig.OpenDelay, function()
-			if use.token == token and use.active then
-				animatePages()
-			end
-		end)
 		return
 	end
 
@@ -678,12 +497,25 @@ local function enterUse()
 			pinchScale = scale
 		end
 	end))
+end
 
-	task.delay(ManualConfig.OpenDelay, function()
-		if use.token == token and use.active then
-			animatePages()
-		end
-	end)
+-- Pose local primeiro, aviso ao servidor depois. Vai o valor absoluto, não um "alterna": assim
+-- dois toques rápidos convergem em vez de depender da ordem em que os avisos chegam lá.
+function setHand(value)
+	if not equipped or inHand == value then
+		return
+	end
+	inHand = value
+	local character = player.Character
+	if character then
+		ManualView.SetPose(character, value)
+	end
+	if value then
+		enterUse()
+	else
+		exitUse()
+	end
+	toggleModeRemote:FireServer(value)
 end
 
 local function release()
@@ -694,8 +526,101 @@ local function release()
 	end
 	table.clear(session.links)
 	session.bound = false
-	currentPage = 1
 	gui.Enabled = false
+end
+
+local function drop()
+	equipped = false
+	inHand = false
+	local character = player.Character
+	release()
+	if character then
+		ManualView.Hide(character)
+	end
+	unequipRemote:FireServer()
+end
+
+local function startHold()
+	if session.holdTween then
+		return
+	end
+	session.holdStart = os.clock()
+
+	fill.Size = FILL_HIDDEN
+
+	local tween = TweenService:Create(
+		fill,
+		TweenInfo.new(ManualConfig.HoldTime, Enum.EasingStyle.Linear),
+		{ Size = FILL_FULL }
+	)
+	session.holdTween = tween
+	tween.Completed:Connect(function(state)
+		if state ~= Enum.PlaybackState.Completed then
+			return
+		end
+		session.holdTween = nil
+		-- Soltar depois do disparo não pode virar clique curto.
+		session.holdStart = 0
+		resetHold(true)
+		drop()
+	end)
+	tween:Play()
+end
+
+local function stopHold()
+	if not session.holdTween then
+		return
+	end
+	local held = os.clock() - session.holdStart
+	resetHold(false)
+	if session.holdStart > 0 and held < ManualConfig.HoldTime then
+		setHand(not inHand)
+	end
+end
+
+local function bindButton()
+	if session.bound then
+		return
+	end
+	session.bound = true
+
+	table.insert(session.links, press.InputBegan:Connect(function(input)
+		if isPress(input) then
+			startHold()
+		end
+	end))
+	table.insert(session.links, press.InputEnded:Connect(function(input)
+		if isPress(input) then
+			stopHold()
+		end
+	end))
+	table.insert(session.links, press.MouseLeave:Connect(stopHold))
+	table.insert(session.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode == ManualConfig.HotKey and gui.Enabled then
+			setHand(not inHand)
+		end
+	end))
+end
+
+local function equip(character)
+	if not ManualView.Show(character) then
+		return
+	end
+	if player.Character ~= character then
+		ManualView.Hide(character)
+		return
+	end
+	equipped = true
+	inHand = false
+	ManualView.SetPose(character, false)
+	gui.Enabled = true
+	bindButton()
+	-- Carregada ao equipar, não no primeiro uso: um track que só busca o asset no toggle chega
+	-- depois de a amostragem da mão já ter congelado o C0.
+	task.spawn(ensureTrack, character)
 end
 
 local function buildSlot(hud, template)
@@ -747,35 +672,17 @@ function ManualController.Start()
 	local remotes = ReplicatedStorage:WaitForChild(ManualConfig.RemotesFolderName)
 	toggleModeRemote = remotes:WaitForChild(ManualConfig.ToggleModeRemote)
 	unequipRemote = remotes:WaitForChild(ManualConfig.UnequipRemote)
-	toggleButtonRemote = remotes:WaitForChild(ManualConfig.ToggleButtonRemote)
-	updateStateRemote = remotes:WaitForChild(ManualConfig.UpdateStateRemote)
 
-	toggleButtonRemote.OnClientEvent:Connect(function(visible)
-		if visible then
-			gui.Enabled = true
-			bindButton()
-			local character = player.Character
-			if character then
-				task.spawn(ensureTrack, character)
-			end
-		else
-			release()
-		end
+	player.CharacterAdded:Connect(function(character)
+		task.spawn(equip, character)
 	end)
-
-	updateStateRemote.OnClientEvent:Connect(function(inHand)
-		if inHand then
-			enterUse()
-		else
-			exitUse()
-		end
+	player.CharacterRemoving:Connect(function()
+		equipped = false
+		inHand = false
+		release()
 	end)
-
-	-- O servidor pode ter anunciado o botão antes deste Start conectar.
-	local character = player.Character
-	if character and character:FindFirstChild(ManualConfig.ModelName) then
-		gui.Enabled = true
-		bindButton()
+	if player.Character then
+		task.spawn(equip, player.Character)
 	end
 end
 

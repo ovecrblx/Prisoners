@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ClassConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ClassConfig"))
 local PlayerData = require(script.Parent:WaitForChild("PlayerData"))
+local Remotes = require(script.Parent.Parent:WaitForChild("Util"):WaitForChild("Remotes"))
 
 local EVENT_NAME = "ClassAction"
 
@@ -67,19 +68,7 @@ local function onAction(player, action, classId)
 end
 
 function ClassService.Init()
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotes then
-		remotes = Instance.new("Folder")
-		remotes.Name = "Remotes"
-		remotes.Parent = ReplicatedStorage
-	end
-
-	ActionEvent = remotes:FindFirstChild(EVENT_NAME)
-	if not ActionEvent then
-		ActionEvent = Instance.new("RemoteEvent")
-		ActionEvent.Name = EVENT_NAME
-		ActionEvent.Parent = remotes
-	end
+	ActionEvent = Remotes.Event(EVENT_NAME)
 end
 
 function ClassService.Start()

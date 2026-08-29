@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("TeleportConfig"))
 local MatchHandoff = require(script.Parent:WaitForChild("MatchHandoff"))
+local Remotes = require(script.Parent.Parent:WaitForChild("Util"):WaitForChild("Remotes"))
 
 local parties = {}
 local touchDebounce = {}
@@ -22,28 +23,9 @@ local UpdateEvent
 local RemotesFolder
 
 local function ensureRemotes()
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotes then
-		remotes = Instance.new("Folder")
-		remotes.Name = "Remotes"
-		remotes.Parent = ReplicatedStorage
-	end
-
-	RemotesFolder = remotes
-
-	ActionEvent = remotes:FindFirstChild("AreaTeleportAction")
-	if not ActionEvent then
-		ActionEvent = Instance.new("RemoteEvent")
-		ActionEvent.Name = "AreaTeleportAction"
-		ActionEvent.Parent = remotes
-	end
-
-	UpdateEvent = remotes:FindFirstChild("AreaTeleportUpdate")
-	if not UpdateEvent then
-		UpdateEvent = Instance.new("RemoteEvent")
-		UpdateEvent.Name = "AreaTeleportUpdate"
-		UpdateEvent.Parent = remotes
-	end
+	RemotesFolder = Remotes.Folder()
+	ActionEvent = Remotes.Event("AreaTeleportAction")
+	UpdateEvent = Remotes.Event("AreaTeleportUpdate")
 end
 
 local function findInner(model)

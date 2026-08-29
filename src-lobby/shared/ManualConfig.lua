@@ -1,10 +1,13 @@
 -- Contrato do caderno: nomes dentro do Model, remotes e tempos, compartilhados entre
--- ManualService e ManualController. O ângulo empilhado é -180 (o sinal escolhe o lado da virada);
--- página virada fica em 0. A posição do C1 é própria de cada motor — o código
--- dirige só a rotação em Z.
+-- ManualService e os módulos de cliente. O caderno é visual e vive no cliente: cada um monta a
+-- própria réplica a partir do template em ReplicatedStorage. O servidor só guarda dois fatos por
+-- jogador — equipado e na mão — para os outros clientes saberem em quem desenhar.
+-- O ângulo empilhado é -180 (o sinal escolhe o lado da virada); página virada fica em 0. A
+-- posição do C1 é própria de cada motor — o código dirige só a rotação em Z.
 local ManualConfig = {}
 
 ManualConfig.ModelName = "Manual"
+ManualConfig.TemplateFolder = "Models" -- dentro de ReplicatedStorage.Client
 ManualConfig.JointName = "ManualJoint"
 ManualConfig.WaistPartName = "LowerTorso"
 ManualConfig.HandPartName = "LeftHand"
@@ -19,14 +22,12 @@ ManualConfig.WaistOffset = Vector3.new(-1, -0.5, 0)
 ManualConfig.WaistAngles = Vector3.new(0, 0, -90)
 ManualConfig.HandOffset = Vector3.new(-0.15, -0.25, -0.5)
 ManualConfig.HandAngles = Vector3.new(60, 0, 180)
-ManualConfig.HandSettleTime = 1.5 -- segundos amostrando a mão até o C0 congelar
-ManualConfig.HandSettleGrace = 0.2 -- segundos após o congelamento até o readback ler
+ManualConfig.HandSettleTime = 0.3 -- segundos amostrando a mão até o C0 congelar
 
 -- Pose final do livro já no espaço da mão, em studs e graus. Preenchida, o C0 é essa constante
--- e o livro nasce certo no primeiro quadro, sem esperar a animação de segurar replicar — a
--- amostragem acima nem roda. Vazia, vale o caminho de amostragem, que deixa um ajuste visível
--- na entrada. Com CalibrateHand o servidor imprime este par pronto para colar.
-ManualConfig.HandC0Offset = Vector3.new(1, 0, 0)
+-- e a amostragem acima nem roda. Vazia, vale a amostragem, que acompanha o braço subindo. Os
+-- dois campos valem juntos: um só é inerte. Com CalibrateHand o cliente imprime o par pronto.
+ManualConfig.HandC0Offset = nil
 ManualConfig.HandC0Angles = nil
 
 -- Câmera de leitura: orbita o livro real na mão seguindo só a posição dele, com o topo no mundo —
@@ -56,14 +57,13 @@ ManualConfig.CameraDumpKey = Enum.KeyCode.C -- só com CalibrateCamera
 -- dos quatro valores acima e nenhuma entrada a move.
 ManualConfig.CalibrateCamera = false
 
--- Modo calibração da mão: readback da pose no servidor.
+-- Modo calibração da mão: readback da pose congelada, no cliente dono.
 ManualConfig.CalibrateHand = false
 
 ManualConfig.RemotesFolderName = "Remotes"
-ManualConfig.ToggleModeRemote = "ToggleManualMode"
-ManualConfig.UnequipRemote = "UnequipManual"
-ManualConfig.ToggleButtonRemote = "ToggleManualButton"
-ManualConfig.UpdateStateRemote = "UpdateManualState"
+ManualConfig.ToggleModeRemote = "ToggleManualMode" -- cliente -> servidor: pose desejada
+ManualConfig.UnequipRemote = "UnequipManual" -- cliente -> servidor
+ManualConfig.StateRemote = "ManualState" -- servidor -> todos; sem argumento, cliente pede o retrato
 
 -- Ordem de leitura; cada página tem motor "<nome>Motor" no Handle.
 ManualConfig.PageOrder = { "Record", "Roster", "Supply" }
@@ -72,10 +72,10 @@ ManualConfig.BackCoverName = "BackCover"
 ManualConfig.FrontCoverMotorName = "FrontCoverMotor"
 
 ManualConfig.StackAngle = -180 -- graus; empilhada, não lida. Negativo levanta a página para o leitor
-ManualConfig.CoverOpenAngle = -180 -- graus; capa aberta para a esquerda
+ManualConfig.CoverOpenAngle = 180 -- graus; capa aberta para a esquerda. O sinal escolhe o lado
 
 ManualConfig.HoldTime = 3 -- segundos de botão segurado para remover o caderno
-ManualConfig.OpenDelay = 0.5 -- capa abre antes da lógica de páginas ligar
+ManualConfig.OpenDelay = 0.5 -- capa abre depois deste atraso
 ManualConfig.RaycastRange = 20 -- studs; alcance do clique nas hitboxes
 
 ManualConfig.PageTween = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)

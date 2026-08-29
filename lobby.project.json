@@ -20,13 +20,6 @@
       "$ignoreUnknownInstances": true,
       "Shared": {
         "$path": "src-lobby/shared"
-      },
-      "Remotes": {
-        "$className": "Folder",
-        "ToggleManualMode": { "$className": "RemoteEvent" },
-        "UnequipManual": { "$className": "RemoteEvent" },
-        "ToggleManualButton": { "$className": "RemoteEvent" },
-        "UpdateManualState": { "$className": "RemoteEvent" }
       }
     }
   }
