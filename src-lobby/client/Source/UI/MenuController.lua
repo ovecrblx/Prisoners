@@ -209,6 +209,14 @@ local function toggle(entry)
 	end)
 end
 
+-- Fecha painel aberto ou pendente; o caderno chama antes de assumir a tela.
+function MenuController.CloseAll()
+	local current = active or pending
+	if current then
+		toggle(current)
+	end
+end
+
 local function collectButtons(root)
 	local buttons = {}
 	for _, descendant in ipairs(root:GetDescendants()) do
