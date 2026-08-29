@@ -197,9 +197,9 @@ local sinceFigure = 0
 local sinceCheck = 0
 local sinceScene = 0
 
--- O cenário compartilhado pelos feeds: as peças de origem, a última pose espelhada de cada uma, e
--- as ligações que acompanham o streaming enquanto o posto está ligado.
-local sceneSources = {}
+-- O cenário compartilhado pelos feeds: a última pose espelhada de cada peça de origem, e as
+-- ligações que acompanham o streaming enquanto o posto está ligado. Mapa por peça: quem o
+-- streaming leva sai do registro, em vez de acumular entrada morta.
 local scenePoses = {}
 local sceneLinks = {}
 
@@ -366,12 +366,13 @@ end
 -- Contar quantos alvos estão sob o ponteiro, em vez de esconder no primeiro MouseLeave: passando
 -- direto de um botão para o vizinho, a saída de um chega depois da entrada do outro e apagaria o
 -- cursor com o mouse ainda em cima.
-local function watchHover(button)
-	table.insert(controlLinks, button.MouseEnter:Connect(function()
+local function watchHover(button, links)
+	links = links or controlLinks
+	table.insert(links, button.MouseEnter:Connect(function()
 		hovering += 1
 		showCursor()
 	end))
-	table.insert(controlLinks, button.MouseLeave:Connect(function()
+	table.insert(links, button.MouseLeave:Connect(function()
 		hovering = math.max(0, hovering - 1)
 		if hovering == 0 then
 			hideCursor()
@@ -381,8 +382,8 @@ end
 
 -- A cabine sobrevive à sessão, e largar o posto não dispara MouseLeave: sem devolver a pose autorada,
 -- a tecla ficaria crescida esperando um ponteiro que já não está lá.
-local function restoreButtons()
-	for _, home in ipairs(buttonHomes) do
+local function restoreHomes(homes)
+	for _, home in ipairs(homes) do
 		if home.button.Parent then
 			home.scale.Scale = 1
 			home.button.BackgroundTransparency = home.fade
@@ -390,13 +391,24 @@ local function restoreButtons()
 	end
 end
 
+local function restoreButtons()
+	restoreHomes(buttonHomes)
+	for _, slot in ipairs(slots) do
+		restoreHomes(slot.homes)
+	end
+end
+
 -- Toda tecla da tela reage igual: cresce e fecha o fundo sob o ponteiro, afunda no clique e volta.
 -- O crescer é um UIScale dentro do alvo — Size direto brigaria com o UIGridLayout do direcional, que
 -- é dono do tamanho dos filhos. O alvo pode ser o Frame pai da tecla; os sinais vêm de `source`.
 -- AutoButtonColor sai porque tinge a tecla por conta própria, fora deste curso.
-local function dressButton(button, source, clickKey)
+-- `links`/`homes` dizem quem é o dono das conexões: as do painel de um feed vivem no slot e morrem
+-- com ele; sem dono, caem nas listas da cabine, que só o unbind limpa.
+local function dressButton(button, source, clickKey, links, homes)
 	source = source or button
 	clickKey = clickKey or "UiClick"
+	links = links or controlLinks
+	homes = homes or buttonHomes
 	local fade = button.BackgroundTransparency
 	for _, item in ipairs({ button, source }) do
 		if item:IsA("GuiButton") then
@@ -404,17 +416,17 @@ local function dressButton(button, source, clickKey)
 		end
 	end
 
-	-- Reaproveitado: a câmera que sai e volta pelo streaming refaz o attach no mesmo painel, e um
-	-- segundo UIScale multiplicaria o primeiro.
+	-- Reaproveitado: o painel readotado refaz o attach na mesma tecla, e um segundo UIScale
+	-- multiplicaria o primeiro.
 	local scale = button:FindFirstChildOfClass("UIScale")
 	if not scale then
 		scale = Instance.new("UIScale")
 		scale.Parent = button
 	end
-	table.insert(buttonHomes, { button = button, scale = scale, fade = fade })
+	table.insert(homes, { button = button, scale = scale, fade = fade })
 
 	table.insert(
-		controlLinks,
+		links,
 		source.MouseEnter:Connect(function()
 			local lifted = math.max(0, fade - HOVER_LIFT)
 			TweenService:Create(scale, HOVER_TWEEN, { Scale = HOVER_GROW }):Play()
@@ -423,7 +435,7 @@ local function dressButton(button, source, clickKey)
 		end)
 	)
 	table.insert(
-		controlLinks,
+		links,
 		source.MouseLeave:Connect(function()
 			TweenService:Create(scale, HOVER_TWEEN, { Scale = 1 }):Play()
 			TweenService:Create(button, HOVER_TWEEN, { BackgroundTransparency = fade }):Play()
@@ -432,21 +444,21 @@ local function dressButton(button, source, clickKey)
 
 	if source:IsA("GuiButton") then
 		table.insert(
-			controlLinks,
+			links,
 			source.MouseButton1Down:Connect(function()
 				TweenService:Create(scale, SINK_TWEEN, { Scale = PRESS_SINK }):Play()
 				Sfx.Play(clickKey)
 			end)
 		)
 		table.insert(
-			controlLinks,
+			links,
 			source.MouseButton1Up:Connect(function()
 				TweenService:Create(scale, SINK_TWEEN, { Scale = HOVER_GROW }):Play()
 			end)
 		)
 	end
 
-	watchHover(source)
+	watchHover(source, links)
 end
 
 local function dropControlLinks()
@@ -599,12 +611,10 @@ end
 -- O mapa INTEIRO entra, varrendo a hierarquia do cenário: consulta espacial não devolve peça com
 -- CanQuery desligado (medido: 148 das 1546 assim), e raio ou teto cortavam o resto em silêncio.
 local function collectSources()
-	table.clear(sceneSources)
 	table.clear(scenePoses)
 	for _, item in ipairs(sceneRoot and sceneRoot:GetDescendants() or {}) do
 		if wantedInScene(item) then
-			table.insert(sceneSources, item)
-			scenePoses[#sceneSources] = item.CFrame
+			scenePoses[item] = item.CFrame
 		end
 	end
 end
@@ -621,16 +631,23 @@ local function buildScene(slot)
 
 	local ignores = CAM_IGNORES[slot.index]
 	task.spawn(function()
+		-- Foto das chaves antes do laço: o streaming muda o mapa durante as esperas de orçamento, e
+		-- mutar tabela em iteração é indefinido.
+		local sources = {}
+		for source in pairs(scenePoses) do
+			table.insert(sources, source)
+		end
+
 		local spent = 0
-		for index, source in ipairs(sceneSources) do
+		for _, source in ipairs(sources) do
 			if slot.scene ~= scene then
 				return
 			end
-			if source.Parent and not (ignores and inNamedModel(source, ignores)) then
+			if source.Parent and scenePoses[source] and not (ignores and inNamedModel(source, ignores)) then
 				local copy = source:Clone()
 				stripCopy(copy)
 				copy.Parent = scene
-				slot.copies[index] = copy
+				slot.copies[source] = copy
 			end
 
 			spent += 1
@@ -656,7 +673,7 @@ local function buildScene(slot)
 	end)
 
 	-- Cena vazia é o sintoma de sala ainda não transmitida, e sem aviso pareceria feed quebrado.
-	if #sceneSources == 0 and not slot.warned then
+	if next(scenePoses) == nil and not slot.warned then
 		slot.warned = true
 		warn(string.format("[SecMonitor] %s sem cenário carregado; feed fica vazio.", slot.head:GetFullName()))
 	end
@@ -666,10 +683,10 @@ end
 -- que mudaram: comparar CFrame é barato, e reescrever o mapa inteiro por quadro não é.
 local function syncScenery()
 	local moved = {}
-	for index, source in ipairs(sceneSources) do
-		if source.Parent and source.CFrame ~= scenePoses[index] then
-			scenePoses[index] = source.CFrame
-			table.insert(moved, index)
+	for source, pose in pairs(scenePoses) do
+		if source.Parent and source.CFrame ~= pose then
+			scenePoses[source] = source.CFrame
+			table.insert(moved, source)
 		end
 	end
 	if #moved == 0 then
@@ -678,11 +695,11 @@ local function syncScenery()
 
 	for _, slot in ipairs(slots) do
 		local parts, poses = {}, {}
-		for _, index in ipairs(moved) do
-			local copy = slot.copies[index]
+		for _, source in ipairs(moved) do
+			local copy = slot.copies[source]
 			if copy then
 				table.insert(parts, copy)
-				table.insert(poses, scenePoses[index])
+				table.insert(poses, scenePoses[source])
 			end
 		end
 		if #parts > 0 then
@@ -718,19 +735,17 @@ local function watchScenery()
 					end
 				end
 			end
-			if not wantedInScene(item) then
+			if scenePoses[item] ~= nil or not wantedInScene(item) then
 				return
 			end
-			table.insert(sceneSources, item)
-			local index = #sceneSources
-			scenePoses[index] = item.CFrame
+			scenePoses[item] = item.CFrame
 			for _, slot in ipairs(slots) do
 				local ignores = CAM_IGNORES[slot.index]
 				if slot.scene and not (ignores and inNamedModel(item, ignores)) then
 					local copy = item:Clone()
 					stripCopy(copy)
 					copy.Parent = slot.scene
-					slot.copies[index] = copy
+					slot.copies[item] = copy
 				end
 			end
 		end)
@@ -739,18 +754,17 @@ local function watchScenery()
 	table.insert(
 		sceneLinks,
 		sceneRoot.DescendantRemoving:Connect(function(item)
-			-- A origem fica na lista com Parent nil, e a passada de poses a ignora por isso; se a
-			-- mesma peça voltar pelo streaming, o DescendantAdded a registra como entrada nova.
-			for index, source in ipairs(sceneSources) do
-				if source == item then
-					for _, slot in ipairs(slots) do
-						local copy = slot.copies[index]
-						if copy then
-							copy:Destroy()
-							slot.copies[index] = nil
-						end
-					end
-					break
+			-- Sai do registro de vez; se a mesma peça voltar pelo streaming, o DescendantAdded a
+			-- registra de novo.
+			if scenePoses[item] == nil then
+				return
+			end
+			scenePoses[item] = nil
+			for _, slot in ipairs(slots) do
+				local copy = slot.copies[item]
+				if copy then
+					copy:Destroy()
+					slot.copies[item] = nil
 				end
 			end
 		end)
@@ -762,7 +776,6 @@ local function unwatchScenery()
 		link:Disconnect()
 	end
 	table.clear(sceneLinks)
-	table.clear(sceneSources)
 	table.clear(scenePoses)
 end
 
@@ -771,6 +784,17 @@ local function clearFigures(slot)
 		figure.model:Destroy()
 		slot.figures[body] = nil
 	end
+end
+
+-- Solta o que o attach ligou na GUI persistente: painel readotado religa tudo, e a conexão antiga
+-- duplicaria cada gesto.
+local function releaseSlot(slot)
+	for _, link in ipairs(slot.links) do
+		link:Disconnect()
+	end
+	table.clear(slot.links)
+	restoreHomes(slot.homes)
+	table.clear(slot.homes)
 end
 
 local function listParts(items)
@@ -808,20 +832,26 @@ local function makeFigure(slot, character)
 	-- todo acessório traz um "Handle". Contagem diferente é corpo mexido no meio do clone: o boneco
 	-- entra como estátua, em vez de espelhar peça na peça errada.
 	local parts, sources = listParts(copyList), listParts(sourceList)
-	if #parts ~= #sources then
+	local statue = #parts ~= #sources
+	if statue then
+		warn(string.format(
+			"[SecMonitor] boneco de %s divergiu do corpo (%d peças no clone, %d no vivo); entra como estátua.",
+			character.Name, #parts, #sources))
 		table.clear(parts)
 		table.clear(sources)
 	end
 
-	for _, copy in ipairs(parts) do
-		copy.Anchored = true
-		copy.CanCollide = false
-		copy.CanQuery = false
-		copy.CanTouch = false
+	for _, item in ipairs(copyList) do
+		if item:IsA("BasePart") then
+			item.Anchored = true
+			item.CanCollide = false
+			item.CanQuery = false
+			item.CanTouch = false
+		end
 	end
 
 	model.Parent = slot.viewport
-	return { model = model, parts = parts, sources = sources, poses = table.create(#parts) }
+	return { model = model, parts = parts, sources = sources, poses = table.create(#parts), statue = statue }
 end
 
 local function sees(slot, position)
@@ -859,7 +889,9 @@ local function syncFigures(slot)
 		if root and sees(slot, root.Position) then
 			shown[body] = true
 			local figure = slot.figures[body]
-			if not figure or figure.parts[1] == nil or figure.parts[1].Parent == nil then
+			-- Estátua fica: sem peças espelhadas ela reprovaria no teste de vida e seria reclonada a
+			-- cada passada.
+			if not figure or (not figure.statue and (figure.parts[1] == nil or figure.parts[1].Parent == nil)) then
 				if figure then
 					figure.model:Destroy()
 				end
@@ -867,11 +899,13 @@ local function syncFigures(slot)
 				slot.figures[body] = figure
 			end
 
-			local poses = figure.poses
-			for index, source in ipairs(figure.sources) do
-				poses[index] = source.CFrame
+			if not figure.statue then
+				local poses = figure.poses
+				for index, source in ipairs(figure.sources) do
+					poses[index] = source.CFrame
+				end
+				Workspace:BulkMoveTo(figure.parts, poses, Enum.BulkMoveMode.FireCFrameChanged)
 			end
-			Workspace:BulkMoveTo(figure.parts, poses, Enum.BulkMoveMode.FireCFrameChanged)
 		end
 	end
 
@@ -1251,7 +1285,11 @@ local function activate()
 
 	-- Diagnóstico do posto: sem isto, feed vazio e feed que nem ligou são o mesmo preto na tela. A
 	-- contagem é da FONTE, porque as cópias ainda estão entrando em fatias quando isto imprime.
-	print(string.format("[SecMonitor] posto ligado: %d feeds, %d peças de cenário", #slots, #sceneSources))
+	local sources = 0
+	for _ in pairs(scenePoses) do
+		sources += 1
+	end
+	print(string.format("[SecMonitor] posto ligado: %d feeds, %d peças de cenário", #slots, sources))
 end
 
 local function deactivate()
@@ -1387,6 +1425,7 @@ local function step(delta)
 				clearScene(slot)
 				clearFigures(slot)
 				brokenLook(slot, false)
+				releaseSlot(slot)
 				pending[slot.index] = slot.panel
 				table.remove(slots, i)
 			end
@@ -1576,6 +1615,9 @@ unbind = function()
 		driver = nil
 	end
 	dropControlLinks()
+	for _, slot in ipairs(slots) do
+		releaseSlot(slot)
+	end
 	table.clear(slots)
 	table.clear(pending)
 	surface = nil
@@ -1769,6 +1811,8 @@ attach = function(index, panel)
 		panelBase = panel.BackgroundTransparency,
 		figures = {},
 		copies = {},
+		links = {},
+		homes = {},
 	}
 	table.insert(slots, slot)
 
@@ -1781,26 +1825,26 @@ attach = function(index, panel)
 	end
 
 	if view and view:IsA("GuiButton") then
-		table.insert(controlLinks, view.Activated:Connect(function()
+		table.insert(slot.links, view.Activated:Connect(function()
 			setSolo(index)
 		end))
-		dressButton(view)
+		dressButton(view, nil, nil, slot.links, slot.homes)
 	end
 	if back and back:IsA("GuiButton") then
-		table.insert(controlLinks, back.Activated:Connect(function()
+		table.insert(slot.links, back.Activated:Connect(function()
 			setSolo(nil)
 			flashPanels()
 		end))
-		dressButton(back)
+		dressButton(back, nil, nil, slot.links, slot.homes)
 	end
 
 	-- O rótulo é a tecla de trocar de janela: no mosaico ele abre a própria câmera, e no solo passa
 	-- para a seguinte sem devolver o operador ao mosaico entre uma e outra.
 	if value and value:IsA("GuiButton") then
-		table.insert(controlLinks, value.Activated:Connect(function()
+		table.insert(slot.links, value.Activated:Connect(function()
 			setSolo(if solo == nil then index else nextIndex(index))
 		end))
-		dressButton(value)
+		dressButton(value, nil, nil, slot.links, slot.homes)
 	end
 
 	-- O direcional: segurar vira, soltar para — Activated não serve, o gesto é contínuo. Arrastar
@@ -1819,13 +1863,13 @@ attach = function(index, panel)
 				end
 			end
 
-			table.insert(controlLinks, button.MouseButton1Down:Connect(function()
+			table.insert(slot.links, button.MouseButton1Down:Connect(function()
 				turnHeld[direction] = true
 				Servo.start()
 			end))
-			table.insert(controlLinks, button.MouseButton1Up:Connect(release))
-			table.insert(controlLinks, button.MouseLeave:Connect(release))
-			dressButton(arm, button)
+			table.insert(slot.links, button.MouseButton1Up:Connect(release))
+			table.insert(slot.links, button.MouseLeave:Connect(release))
+			dressButton(arm, button, nil, slot.links, slot.homes)
 		end
 	end
 
