@@ -15,12 +15,19 @@ ManualConfig.HandPartName = "LeftHand"
 -- Na cintura os ângulos são lidos direto no LowerTorso, que acompanha o personagem. Na mão são
 -- lidos na direção que o personagem encara, porque a animação de segurar deixa a mão torta —
 -- e só até HandSettleTime, quando o C0 congela e o livro passa a viver no espaço da mão.
-ManualConfig.WaistOffset = Vector3.new(-1.0831, -0.2, 0)
-ManualConfig.WaistAngles = Vector3.new(0, 0, 90)
-ManualConfig.HandOffset = Vector3.new(-0.15, -0.2, -0.5)
+ManualConfig.WaistOffset = Vector3.new(-1, -0.5, 0)
+ManualConfig.WaistAngles = Vector3.new(0, 0, -90)
+ManualConfig.HandOffset = Vector3.new(-0.15, -0.25, -0.5)
 ManualConfig.HandAngles = Vector3.new(60, 0, 180)
-ManualConfig.HandPoseRate = 0.1 -- segundos entre recomposições do C0 na mão
-ManualConfig.HandSettleTime = 0.5 -- segundos até o C0 da mão congelar
+ManualConfig.HandSettleTime = 1.5 -- segundos amostrando a mão até o C0 congelar
+ManualConfig.HandSettleGrace = 0.2 -- segundos após o congelamento até o readback ler
+
+-- Pose final do livro já no espaço da mão, em studs e graus. Preenchida, o C0 é essa constante
+-- e o livro nasce certo no primeiro quadro, sem esperar a animação de segurar replicar — a
+-- amostragem acima nem roda. Vazia, vale o caminho de amostragem, que deixa um ajuste visível
+-- na entrada. Com CalibrateHand o servidor imprime este par pronto para colar.
+ManualConfig.HandC0Offset = Vector3.new(1, 0, 0)
+ManualConfig.HandC0Angles = nil
 
 -- Câmera de leitura: orbita o livro real na mão seguindo só a posição dele, com o topo no mundo —
 -- a rotação do livro não entra, então o horizonte fica reto. O ponto de mira é o Handle deslocado

@@ -68,13 +68,20 @@ local function stackPose(handle)
 end
 
 -- Motor6D com C1 na identidade: Handle = Part0 * C0. Na cintura o C0 é direto, porque o
--- LowerTorso acompanha o personagem. Na mão não: a animação a deixa torta, então os ângulos são
--- lidos na direção que o personagem encara e trazidos de volta para o espaço da mão.
+-- LowerTorso acompanha o personagem. Na mão, HandC0 preenchido é a pose final já no espaço da
+-- mão e vale no primeiro quadro. Sem ele o C0 é amostrado da mão animada, que chega torta e com
+-- atraso: os ângulos são lidos na direção que o personagem encara e trazidos de volta.
 local function poseC0(character, part0)
 	if part0.Name ~= ManualConfig.HandPartName then
 		local angles = ManualConfig.WaistAngles
 		return CFrame.new(ManualConfig.WaistOffset)
 			* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
+	end
+
+	local baked = ManualConfig.HandC0Angles
+	if ManualConfig.HandC0Offset and baked then
+		return CFrame.new(ManualConfig.HandC0Offset)
+			* CFrame.fromOrientation(math.rad(baked.X), math.rad(baked.Y), math.rad(baked.Z))
 	end
 
 	local root = character:FindFirstChild("HumanoidRootPart")
@@ -197,21 +204,26 @@ local function toggleMode(player)
 
 	joint.Part0 = part0
 	session.inHand = toHand
-	session.handC0 = nil
 	session.handHeld = 0
+	session.handC0 = nil
 	applyPose(character, session.model)
+	-- Com HandC0 preenchido a pose já é final: nada a amostrar, nada a acomodar.
+	if toHand and ManualConfig.HandC0Offset and ManualConfig.HandC0Angles then
+		session.handC0 = joint.C0
+	end
 
 	-- Readback da calibração, depois do C0 congelar.
 	if ManualConfig.CalibrateHand and toHand then
-		task.delay(ManualConfig.HandSettleTime + ManualConfig.HandPoseRate, function()
-			local root = character:FindFirstChild("HumanoidRootPart")
-			if not (session.inHand and root and joint.Part1) then
+		task.delay(ManualConfig.HandSettleTime + ManualConfig.HandSettleGrace, function()
+			local c0 = session.handC0
+			if not (session.inHand and c0) then
 				return
 			end
-			local facing = CFrame.Angles(0, select(2, root.CFrame:ToOrientation()), 0)
-			local x, y, z = (facing:Inverse() * joint.Part1.CFrame):ToOrientation()
-			warn(("[Manual] HandAngles pedido (%.0f, %.0f, %.0f) -> livro em (%.1f, %.1f, %.1f)"):format(
-				ManualConfig.HandAngles.X, ManualConfig.HandAngles.Y, ManualConfig.HandAngles.Z,
+			local x, y, z = c0:ToOrientation()
+			warn(("[Manual] pose travada da mão\n"
+				.. "ManualConfig.HandC0Offset = Vector3.new(%.4f, %.4f, %.4f)\n"
+				.. "ManualConfig.HandC0Angles = Vector3.new(%.2f, %.2f, %.2f)"):format(
+				c0.Position.X, c0.Position.Y, c0.Position.Z,
 				math.deg(x), math.deg(y), math.deg(z)))
 		end)
 	end
@@ -240,10 +252,9 @@ local function watchCharacter(player, character)
 
 	equip(session, player, character)
 
-	-- A mão chega posada pela animação, e essa pose replica com atraso: uma aplicação só pegaria
-	-- a mão ainda em repouso. Passado HandSettleTime o C0 congela — daí em diante o livro é
-	-- rígido no espaço da mão e nada mais lê o yaw do personagem.
-	local since = 0
+	-- Caminho só de quando HandC0 está vazio: a mão chega posada pela animação, e essa pose
+	-- replica com atraso. Amostra todo quadro — a 10 Hz o livro escorregava em degraus visíveis
+	-- até o lugar. Passado HandSettleTime o C0 congela.
 	table.insert(session.links, RunService.Heartbeat:Connect(function(delta)
 		if not session.inHand or not session.model or session.model.Parent ~= character then
 			return
@@ -252,11 +263,6 @@ local function watchCharacter(player, character)
 			return
 		end
 		session.handHeld += delta
-		since += delta
-		if since < ManualConfig.HandPoseRate then
-			return
-		end
-		since = 0
 		local joint = jointOf(session.model)
 		if not (joint and joint.Part0) then
 			return

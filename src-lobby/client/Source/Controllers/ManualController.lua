@@ -380,7 +380,9 @@ local function onTap()
 end
 
 -- Animação de segurar: toca aqui no dono — em personagem de jogador a replicação de
--- animação é cliente -> servidor, nunca o contrário.
+-- animação é cliente -> servidor, nunca o contrário. Carregada na hora em que o caderno é
+-- equipado, não no primeiro uso: o servidor amostra a mão animada para montar o C0, e uma
+-- animação que só começa a buscar o asset no toggle chega depois da amostragem terminar.
 local function ensureTrack(character)
 	if holdTrack and holdTrackCharacter == character then
 		return holdTrack
@@ -465,6 +467,13 @@ local function enterUse()
 	end
 	use.active = true
 
+	-- Antes de buildBook, que rende em três WaitForChild: o servidor começa a amostrar a mão
+	-- assim que manda este evento, e a animação atrasada faria a amostragem pegar a mão parada.
+	local track = ensureTrack(character)
+	if track then
+		track:Play()
+	end
+
 	MenuController.CloseAll()
 	local mainGui = playerGui:FindFirstChild("MainGui")
 	if mainGui then
@@ -476,11 +485,6 @@ local function enterUse()
 	-- abaixo fora de use.links, sem quem desconecte.
 	if use.token ~= token then
 		return
-	end
-
-	local track = ensureTrack(character)
-	if track then
-		track:Play()
 	end
 
 	-- Um disparo só: Running repete antes da resposta do servidor, e o segundo toggle
@@ -750,6 +754,10 @@ function ManualController.Start()
 		if visible then
 			gui.Enabled = true
 			bindButton()
+			local character = player.Character
+			if character then
+				task.spawn(ensureTrack, character)
+			end
 		else
 			release()
 		end
