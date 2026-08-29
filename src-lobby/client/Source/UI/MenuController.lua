@@ -130,14 +130,16 @@ local function open(entry)
 
 	entry.Panel.Visible = true
 
-	if entry.Viewer then
-		ClassViewer.Open(ClassList.Selected(), backdrop)
-	end
-
 	Motion.Tween(entry.Scale, Motion.PanelIn, { Scale = 1 })
 	Motion.Tween(entry.Panel, Motion.PanelIn, { Position = entry.Position, Rotation = 0 })
 	Motion.TweenFade(entry.Fade, 1, Motion.Fade)
 	playCards(entry)
+
+	-- Depois dos tweens: o painel responde no primeiro frame, e uma espera de boot no viewer
+	-- acontece com a GUI já em cena.
+	if entry.Viewer then
+		ClassViewer.Open(ClassList.Selected(), backdrop)
+	end
 end
 
 local function close(entry)

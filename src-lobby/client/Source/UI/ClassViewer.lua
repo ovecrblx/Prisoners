@@ -4,6 +4,7 @@
 -- O clone é client-side: instância replicada movida para o workspace morre no streaming.
 local ClassViewer = {}
 
+local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -45,6 +46,12 @@ local DRAG_THRESHOLD = 6
 -- Segundos de espera por um Rig que ainda não replicou.
 local RIG_TIMEOUT = 20
 
+-- s de folga entre itens da fila de pré-carga; item com alguém esperando não paga a folga.
+local QUEUE_GAP = 1
+
+-- s de espera pelas pastas fundamentais no boot; a replicação logo após o join é lenta.
+local BOOT_TIMEOUT = 30
+
 local scene, rig, camPart, basePart
 local rigPosition, idleTrack
 local yaw, spin, lastYaw = 0, 0, 0
@@ -55,6 +62,17 @@ local dragStartX, dragStartY, lastX = 0, 0, 0
 local introTween
 local connections = {}
 
+-- Fundamentais do boot (sala e pasta de destino), a pasta dos rigs (dona: a fila), e a fila de
+-- pré-carga: ids pendentes em ordem de prioridade, o que já foi pré-carregado e quem espera cada
+-- rig. `openRequest` invalida um Open que ainda aguardava o boot quando o painel fechou.
+local viewerSource, sceneFolder, charFolder
+local bootStarted, bootDone = false, false
+local openRequest = 0
+local queue = {}
+local preloaded = {}
+local waiters = {}
+local pumping = false
+
 local function disconnectAll()
 	for _, connection in ipairs(connections) do
 		connection:Disconnect()
@@ -62,9 +80,122 @@ local function disconnectAll()
 	connections = {}
 end
 
-local function characterFolder()
-	local client = ReplicatedStorage:WaitForChild("Client", 10)
-	return client and client:WaitForChild("Character", 10)
+-- Boot: sala e pasta de destino, uma vez e fora do clique. Pasta de cena ausente não vale espera:
+-- o clone é local, uma pasta local serve igual.
+local function resolveBoot()
+	local client = ReplicatedStorage:WaitForChild("Client", BOOT_TIMEOUT)
+	local gui = client and client:WaitForChild("GUI", BOOT_TIMEOUT)
+	viewerSource = gui and gui:WaitForChild("Viewer_Model", BOOT_TIMEOUT)
+	if not viewerSource then
+		warn("[ClassViewer] ReplicatedStorage.Client.GUI.Viewer_Model não encontrado.")
+	end
+
+	sceneFolder = workspace:FindFirstChild(SCENE_PARENT)
+	if not sceneFolder then
+		local folder = Instance.new("Folder")
+		folder.Name = SCENE_PARENT
+		folder.Parent = workspace
+		sceneFolder = folder
+	end
+	bootDone = true
+end
+
+local function ensureBoot()
+	if bootStarted then
+		return
+	end
+	bootStarted = true
+	task.spawn(resolveBoot)
+end
+
+-- Yielda até o boot terminar; o clique só passa por aqui com o painel já animando.
+local function awaitBoot()
+	ensureBoot()
+	while not bootDone do
+		task.wait(0.1)
+	end
+	return viewerSource ~= nil
+end
+
+local function fireWaiters(classId, template)
+	local list = waiters[classId]
+	waiters[classId] = nil
+	if list then
+		for _, callback in ipairs(list) do
+			task.spawn(callback, template)
+		end
+	end
+end
+
+-- A fila espera cada rig replicar e pré-carrega os assets, um por vez, em thread própria — clique
+-- nenhum espera por ela. Dona única de `charFolder`.
+local function pumpQueue()
+	if pumping then
+		return
+	end
+	pumping = true
+	task.spawn(function()
+		if not charFolder then
+			local client = ReplicatedStorage:WaitForChild("Client", BOOT_TIMEOUT)
+			charFolder = client and client:WaitForChild("Character", BOOT_TIMEOUT)
+			if not charFolder then
+				warn("[ClassViewer] ReplicatedStorage.Client.Character não encontrado.")
+				pumping = false
+				return
+			end
+		end
+
+		while #queue > 0 do
+			local classId = table.remove(queue, 1)
+			local entry = ClassConfig.Get(classId)
+			if entry then
+				local classFolder = charFolder:FindFirstChild(entry.Rig)
+					or charFolder:WaitForChild(entry.Rig, RIG_TIMEOUT)
+				local template = classFolder
+					and (classFolder:FindFirstChild("Rig") or classFolder:WaitForChild("Rig", RIG_TIMEOUT))
+				if template then
+					if not preloaded[classId] then
+						preloaded[classId] = true
+						pcall(function()
+							ContentProvider:PreloadAsync(template:GetDescendants())
+						end)
+					end
+					fireWaiters(classId, template)
+				else
+					warn("[ClassViewer] Rig não encontrado em Character." .. entry.Rig)
+					fireWaiters(classId, nil)
+				end
+			end
+
+			-- A folga é só do trabalho de fundo: cabeça com alguém esperando é rig visualizado.
+			local head = queue[1]
+			if head and waiters[head] == nil then
+				task.wait(QUEUE_GAP)
+			end
+		end
+		pumping = false
+		if #queue > 0 then
+			pumpQueue()
+		end
+	end)
+end
+
+-- Rig pedido fura a fila; `callback` recebe o template, ou nil se ele não existir no pacote.
+local function promote(classId, callback)
+	for index, id in ipairs(queue) do
+		if id == classId then
+			table.remove(queue, index)
+			break
+		end
+	end
+	table.insert(queue, 1, classId)
+	local list = waiters[classId]
+	if not list then
+		list = {}
+		waiters[classId] = list
+	end
+	list[#list + 1] = callback
+	pumpQueue()
 end
 
 -- Meia altura no eixo Y do mundo. O Base está rotacionado, então Size.Y não serve.
@@ -169,55 +300,40 @@ local function placeRig(template)
 	playIdle()
 end
 
--- O pacote Character é grande: logo depois do join a pasta existe e as classes dentro dela
--- ainda não. Esperar aqui travaria a abertura do painel, então a cena abre sem rig e ele
--- entra quando replicar.
-local function loadRig(classId)
+local function swapRig(template)
 	stopIdle()
-
 	if rig then
 		rig:Destroy()
 		rig = nil
 	end
+	placeRig(template)
+end
 
+-- Sem yield, e o rig atual só morre com o substituto em mãos: template já replicado troca na
+-- hora; senão o pedido fura a fila e o boneco atual segura o pedestal até o novo chegar.
+local function loadRig(classId)
 	local entry = ClassConfig.Get(classId)
 	if not entry then
 		warn("[ClassViewer] Classe fora do ClassConfig: " .. tostring(classId))
 		return false
 	end
 
-	local folder = characterFolder()
-	if not folder then
-		warn("[ClassViewer] ReplicatedStorage.Client.Character não encontrado.")
-		return false
-	end
-
 	request += 1
 	local token = request
 
-	local source = folder:FindFirstChild(entry.Rig)
-	local template = source and source:FindFirstChild("Rig")
-
+	local classFolder = charFolder and charFolder:FindFirstChild(entry.Rig)
+	local template = classFolder and classFolder:FindFirstChild("Rig")
 	if template then
-		placeRig(template)
+		swapRig(template)
 		return true
 	end
 
-	task.spawn(function()
-		local classFolder = folder:WaitForChild(entry.Rig, RIG_TIMEOUT)
-		local model = classFolder and classFolder:WaitForChild("Rig", RIG_TIMEOUT)
-
-		if not model then
-			warn("[ClassViewer] Rig não encontrado em Character." .. entry.Rig)
-			return
-		end
-
-		if scene and request == token then
-			placeRig(model)
+	promote(classId, function(model)
+		if model and scene and request == token then
+			swapRig(model)
 			aimCamera()
 		end
 	end)
-
 	return true
 end
 
@@ -238,22 +354,16 @@ function ClassViewer.Open(classId, dragSource)
 		ClassViewer.Close()
 	end
 
-	local client = ReplicatedStorage:WaitForChild("Client", 10)
-	local guiFolder = client and client:WaitForChild("GUI", 10)
-	local source = guiFolder and guiFolder:WaitForChild("Viewer_Model", 10)
+	openRequest += 1
+	local myOpen = openRequest
 
-	if not source then
-		warn("[ClassViewer] ReplicatedStorage.Client.GUI.Viewer_Model não encontrado.")
+	-- Só o boot leve (sala + pasta); o painel já está animando quando isto yielda. Fechar durante
+	-- a espera invalida o pedido — sem isto a cena nasceria órfã com a câmera presa nela.
+	if not awaitBoot() or openRequest ~= myOpen then
 		return false
 	end
 
-	local container = workspace:WaitForChild(SCENE_PARENT, 10)
-	if not container then
-		warn("[ClassViewer] workspace." .. SCENE_PARENT .. " não encontrado; usando o workspace.")
-		container = workspace
-	end
-
-	scene = source:Clone()
+	scene = viewerSource:Clone()
 
 	-- O Base não tem weld com o Handle: solto no workspace, ele cairia.
 	for _, descendant in ipairs(scene:GetDescendants()) do
@@ -261,7 +371,7 @@ function ClassViewer.Open(classId, dragSource)
 			descendant.Anchored = true
 		end
 	end
-	scene.Parent = container
+	scene.Parent = sceneFolder
 
 	camPart = scene:FindFirstChild("Cam")
 	basePart = scene:FindFirstChild(BASE_NAME, true)
@@ -372,6 +482,7 @@ function ClassViewer.ConsumeDrag()
 end
 
 function ClassViewer.Close()
+	openRequest += 1
 	disconnectAll()
 	stopIdle()
 	dragging, dragMoved = false, false
@@ -402,6 +513,16 @@ function ClassViewer.Close()
 	end
 	scene, rig, camPart, basePart = nil, nil, nil, nil
 	rigPosition = nil
+end
+
+-- Boot do loader: resolve o fundamental fora do clique e enfileira a pré-carga de todos os rigs
+-- na ordem do catálogo. Clique nenhum espera replicação: no máximo promove um item da fila.
+function ClassViewer.Init()
+	ensureBoot()
+	for _, entry in ipairs(ClassConfig.List) do
+		queue[#queue + 1] = entry.Id
+	end
+	pumpQueue()
 end
 
 return ClassViewer
