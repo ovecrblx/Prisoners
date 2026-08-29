@@ -1,6 +1,6 @@
 -- Contrato do caderno: nomes dentro do Model, remotes e tempos, compartilhados entre
--- ManualService e ManualController. O ângulo empilhado é -180 (sinal herdado da pose autorada
--- dos motores); página virada fica em 0. A posição do C1 é própria de cada motor — o código
+-- ManualService e ManualController. O ângulo empilhado é -180 (o sinal escolhe o lado da virada);
+-- página virada fica em 0. A posição do C1 é própria de cada motor — o código
 -- dirige só a rotação em Z.
 local ManualConfig = {}
 
@@ -13,22 +13,43 @@ ManualConfig.HandPartName = "LeftHand"
 -- espaço da parte do corpo. Ângulos em graus, ordem Y-X-Z igual ao campo Orientation do Studio,
 -- não a de CFrame.Angles: X inclina a capa, Y gira em torno da vertical, Z rola sobre a lombada.
 -- Na cintura os ângulos são lidos direto no LowerTorso, que acompanha o personagem. Na mão são
--- lidos na direção que o personagem encara, porque a animação de segurar deixa a mão torta.
+-- lidos na direção que o personagem encara, porque a animação de segurar deixa a mão torta —
+-- e só até HandSettleTime, quando o C0 congela e o livro passa a viver no espaço da mão.
 ManualConfig.WaistOffset = Vector3.new(-1.0831, -0.2, 0)
 ManualConfig.WaistAngles = Vector3.new(0, 0, 90)
 ManualConfig.HandOffset = Vector3.new(-0.15, -0.2, -0.5)
 ManualConfig.HandAngles = Vector3.new(60, 0, 180)
 ManualConfig.HandPoseRate = 0.1 -- segundos entre recomposições do C0 na mão
+ManualConfig.HandSettleTime = 0.5 -- segundos até o C0 da mão congelar
 
--- Câmera de leitura, congelada na entrada do modo em uso: mira o livro real na mão, na pose de
--- HandAngles. Offset em studs a partir da cabeça, no frame da direção que o personagem encara
--- (X direita, Y cima, Z para trás). Ângulos em graus, mesma ordem Y-X-Z do campo Orientation:
--- X negativo inclina o olhar para baixo, Y positivo gira para a esquerda, Z rola a tela.
-ManualConfig.CameraOffset = Vector3.new(0, 0, 0)
-ManualConfig.CameraAngles = Vector3.new(-20, 8, 0)
+-- Câmera de leitura: orbita o livro real na mão seguindo só a posição dele, com o topo no mundo —
+-- a rotação do livro não entra, então o horizonte fica reto. O ponto de mira é o Handle deslocado
+-- por CameraFocusOffset, em studs no espaço do livro. Yaw e pitch em graus: yaw é relativo à
+-- direção que o personagem encara, congelada na entrada do modo; pitch é do mundo, positivo olha
+-- de cima. Distância em studs, do ponto de mira. Estes quatro definem a vista, e fora de
+-- CalibrateCamera nenhuma entrada os altera.
+ManualConfig.CameraFocusOffset = Vector3.new(0, 0, 0)
+ManualConfig.CameraYaw = 6.5
+ManualConfig.CameraPitch = -30
+ManualConfig.CameraDistance = 0.8
+ManualConfig.CameraMinPitch = -85
+ManualConfig.CameraMaxPitch = 85
+ManualConfig.CameraMinDistance = 0.5
+ManualConfig.CameraMaxDistance = 12
+ManualConfig.CameraOrbitSpeed = 0.4 -- graus por pixel arrastado
+ManualConfig.CameraZoomStep = 0.5 -- studs por clique de roda
+ManualConfig.CameraPinchStep = 4 -- studs por unidade de escala da pinça
+ManualConfig.CameraSmoothing = 18 -- 1/s; maior gruda mais no livro
+ManualConfig.CameraDragThreshold = 8 -- pixels antes do arrasto virar órbita
+ManualConfig.CameraPanSpeed = 0.01 -- studs por pixel arrastado com o botão do meio
+ManualConfig.CameraDumpKey = Enum.KeyCode.C -- só com CalibrateCamera
 
--- Modo calibração: tira só a tomada de câmera e as travas de movimento. Animação de segurar,
--- capa e virada de página continuam, e o livro fica visível na mão dos dois jeitos.
+-- Modo calibração da câmera: painel vivo com órbita e mira, botão do meio arrasta a mira, e a
+-- tecla CameraDumpKey imprime o bloco pronto para colar aqui. Desligado, a vista é exatamente a
+-- dos quatro valores acima e nenhuma entrada a move.
+ManualConfig.CalibrateCamera = false
+
+-- Modo calibração da mão: readback da pose no servidor.
 ManualConfig.CalibrateHand = false
 
 ManualConfig.RemotesFolderName = "Remotes"
@@ -43,7 +64,7 @@ ManualConfig.EndpaperName = "Endpaper"
 ManualConfig.BackCoverName = "BackCover"
 ManualConfig.FrontCoverMotorName = "FrontCoverMotor"
 
-ManualConfig.StackAngle = -180 -- graus; empilhada à direita, não lida
+ManualConfig.StackAngle = -180 -- graus; empilhada, não lida. Negativo levanta a página para o leitor
 ManualConfig.CoverOpenAngle = -180 -- graus; capa aberta para a esquerda
 
 ManualConfig.HoldTime = 3 -- segundos de botão segurado para remover o caderno

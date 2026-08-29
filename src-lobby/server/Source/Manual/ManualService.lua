@@ -1,6 +1,8 @@
 -- Autoridade do caderno: um Model preso ao personagem por um Motor6D, cuja Part0 decide cintura
 -- ou mão. Sem Accessory e sem Attachment, então nada de solda do Humanoid destruindo junta nem de
 -- restrição resolvendo contra o personagem — a pose inteira sai do C0, montado de ManualConfig.
+-- Na mão o C0 congela depois de HandSettleTime: dali em diante o livro é rígido no espaço da
+-- mão, sem reler o yaw do personagem, e nada que mexa a câmera alcança a orientação dele.
 -- A capa anima aqui e replica; a animação de segurar toca no cliente dono (em personagem de
 -- jogador, animação replica cliente -> servidor).
 -- O cliente dono recebe UpdateManualState para câmera, páginas, animação e HUD.
@@ -195,12 +197,13 @@ local function toggleMode(player)
 
 	joint.Part0 = part0
 	session.inHand = toHand
+	session.handC0 = nil
+	session.handHeld = 0
 	applyPose(character, session.model)
 
-	-- Readback da calibração. Atrasado porque a pose da mão vem da animação do dono e replica
-	-- depois do toggle: ler agora pegaria a mão ainda em repouso.
+	-- Readback da calibração, depois do C0 congelar.
 	if ManualConfig.CalibrateHand and toHand then
-		task.delay(ManualConfig.HandPoseRate * 5, function()
+		task.delay(ManualConfig.HandSettleTime + ManualConfig.HandPoseRate, function()
 			local root = character:FindFirstChild("HumanoidRootPart")
 			if not (session.inHand and root and joint.Part1) then
 				return
@@ -232,24 +235,40 @@ end
 
 local function watchCharacter(player, character)
 	releaseSession(player)
-	local session = { links = {}, inHand = false }
+	local session = { links = {}, inHand = false, handHeld = 0 }
 	sessions[player] = session
 
 	equip(session, player, character)
 
 	-- A mão chega posada pela animação, e essa pose replica com atraso: uma aplicação só pegaria
-	-- a mão ainda em repouso.
+	-- a mão ainda em repouso. Passado HandSettleTime o C0 congela — daí em diante o livro é
+	-- rígido no espaço da mão e nada mais lê o yaw do personagem.
 	local since = 0
 	table.insert(session.links, RunService.Heartbeat:Connect(function(delta)
 		if not session.inHand or not session.model or session.model.Parent ~= character then
 			return
 		end
+		if session.handC0 then
+			return
+		end
+		session.handHeld += delta
 		since += delta
 		if since < ManualConfig.HandPoseRate then
 			return
 		end
 		since = 0
-		applyPose(character, session.model)
+		local joint = jointOf(session.model)
+		if not (joint and joint.Part0) then
+			return
+		end
+		local c0 = poseC0(character, joint.Part0)
+		if not c0 then
+			return
+		end
+		joint.C0 = c0
+		if session.handHeld >= ManualConfig.HandSettleTime then
+			session.handC0 = c0
+		end
 	end))
 end
 

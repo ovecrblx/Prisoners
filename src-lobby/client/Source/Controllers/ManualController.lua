@@ -4,8 +4,11 @@
 -- O HUD é o template ImageButton dentro de ManualGui.Hud: Press leva a imagem do item, Key o
 -- rótulo da tecla, Fill o progresso do hold. O template fica invisível; cada item é um clone.
 -- ManualGui e MainGui são irmãs: o modo em uso desliga só a MainGui.
--- No modo em uso a câmera congela num CFrame tirado de ManualConfig (offset da cabeça + graus)
--- e enquadra o livro real na mão, na pose calibrada de HandAngles.
+-- No modo em uso a câmera orbita o ponto de mira do livro com o topo no mundo: segue a posição
+-- dele, nunca a rotação, então o horizonte não tomba e a vista não gira junto com a mão. Mira,
+-- yaw, pitch e distância são do jogador — botão direito ou arrasto giram, botão do meio move a
+-- mira, roda e pinça aproximam. O livro não lê nada da câmera, então girar a vista nunca move a
+-- pose. Com CalibrateCamera um painel mostra os quatro valores vivos e CameraDumpKey imprime.
 local ManualController = {}
 
 local Players = game:GetService("Players")
@@ -39,11 +42,73 @@ local playerGui
 local gui, slot, press, fill
 
 local session = { links = {}, holdTween = nil, holdStart = 0, bound = false }
-local use = { links = {}, motors = {}, baseC1 = {}, hitboxes = {}, actions = {}, active = false, token = 0 }
+local use = {
+	links = {},
+	angles = {},
+	pageTweens = {},
+	hitboxes = {},
+	actions = {},
+	active = false,
+	token = 0,
+}
 local currentPage = 1
 local hiddenAccessories = {}
 local holdTrack
 local holdTrackCharacter
+
+-- Órbita viva da câmera: radianos e studs, semeada de ManualConfig e mantida entre aberturas
+-- para a calibração não se perder a cada fechada.
+local orbit = { yaw = 0, pitch = 0, distance = 0 }
+local focus = Vector3.zero
+local drag
+local pinchScale
+local anchor
+local readout
+
+local function resetOrbit()
+	orbit.yaw = math.rad(ManualConfig.CameraYaw)
+	orbit.pitch = math.rad(ManualConfig.CameraPitch)
+	orbit.distance = ManualConfig.CameraDistance
+	focus = ManualConfig.CameraFocusOffset
+end
+
+local function orbitBy(deltaX, deltaY)
+	local speed = math.rad(ManualConfig.CameraOrbitSpeed)
+	orbit.yaw -= deltaX * speed
+	orbit.pitch = math.clamp(
+		orbit.pitch - deltaY * speed,
+		math.rad(ManualConfig.CameraMinPitch),
+		math.rad(ManualConfig.CameraMaxPitch)
+	)
+end
+
+local function zoomBy(amount)
+	orbit.distance = math.clamp(
+		orbit.distance + amount,
+		ManualConfig.CameraMinDistance,
+		ManualConfig.CameraMaxDistance
+	)
+end
+
+local function panBy(deltaX, deltaY)
+	local handle = use.handle
+	if not handle then
+		return
+	end
+	local screen = Vector3.new(-deltaX, deltaY, 0) * ManualConfig.CameraPanSpeed
+	local world = workspace.CurrentCamera.CFrame:VectorToWorldSpace(screen)
+	focus += handle.CFrame:VectorToObjectSpace(world)
+end
+
+local function dumpCamera()
+	warn(("[Manual] calibração da câmera\n"
+		.. "ManualConfig.CameraFocusOffset = Vector3.new(%.3f, %.3f, %.3f)\n"
+		.. "ManualConfig.CameraYaw = %.1f\n"
+		.. "ManualConfig.CameraPitch = %.1f\n"
+		.. "ManualConfig.CameraDistance = %.2f"):format(
+		focus.X, focus.Y, focus.Z,
+		math.deg(orbit.yaw), math.deg(orbit.pitch), orbit.distance))
+end
 
 local function resetHold(instant)
 	if session.holdTween then
@@ -101,6 +166,25 @@ local function isPress(input)
 		or input.UserInputType == Enum.UserInputType.Touch
 end
 
+local function isOrbit(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton2
+end
+
+local function isPan(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton3
+end
+
+local function dragTo(position)
+	local delta = position - drag.last
+	drag.last = position
+	if not drag.moved and (position - drag.origin).Magnitude > ManualConfig.CameraDragThreshold then
+		drag.moved = true
+	end
+	if drag.moved then
+		orbitBy(delta.X, delta.Y)
+	end
+end
+
 local function bindButton()
 	if session.bound then
 		return
@@ -126,6 +210,33 @@ local function bindButton()
 			toggleModeRemote:FireServer()
 		end
 	end))
+end
+
+-- Painel de calibração, montado em código: a ManualGui publicada não tem lugar para ele.
+local function buildReadout()
+	if readout or not gui then
+		return
+	end
+	local label = Instance.new("TextLabel")
+	label.Name = "Calibrate"
+	label.AnchorPoint = Vector2.new(0.5, 0)
+	label.Position = UDim2.new(0.5, 0, 0, 8)
+	label.Size = UDim2.fromOffset(340, 40)
+	label.BackgroundColor3 = Color3.new(0, 0, 0)
+	label.BackgroundTransparency = 0.35
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Font = Enum.Font.Code
+	label.TextSize = 14
+	label.ZIndex = 10
+	label.Parent = gui
+	readout = label
+end
+
+local function clearReadout()
+	if readout then
+		readout:Destroy()
+		readout = nil
+	end
 end
 
 local function tempFolder()
@@ -162,14 +273,32 @@ local function restoreAccessories()
 	table.clear(hiddenAccessories)
 end
 
+local function clearPages()
+	for _, tween in pairs(use.pageTweens) do
+		tween:Cancel()
+	end
+	for _, proxy in pairs(use.angles) do
+		proxy:Destroy()
+	end
+	table.clear(use.pageTweens)
+	table.clear(use.angles)
+end
+
+-- A virada passa por um NumberValue em graus, não pelo C1 direto: a meia-volta entre empilhada e
+-- virada é de 180 graus exatos, onde a interpolação de rotação não tem lado definido e o engine
+-- escolhe um. Em graus o sinal de StackAngle manda no lado.
 local function animatePages()
 	for index, pageName in ipairs(ManualConfig.PageOrder) do
-		local motor = use.motors[pageName]
-		local base = use.baseC1[pageName]
-		if motor and base then
+		local proxy = use.angles[pageName]
+		if proxy then
+			local running = use.pageTweens[pageName]
+			if running then
+				running:Cancel()
+			end
 			local angle = if index < currentPage then 0 else ManualConfig.StackAngle
-			local target = base * CFrame.Angles(0, 0, math.rad(angle))
-			TweenService:Create(motor, ManualConfig.PageTween, { C1 = target }):Play()
+			local tween = TweenService:Create(proxy, ManualConfig.PageTween, { Value = angle })
+			use.pageTweens[pageName] = tween
+			tween:Play()
 		end
 	end
 end
@@ -181,10 +310,10 @@ local function buildBook(manual)
 		return
 	end
 
-	table.clear(use.motors)
-	table.clear(use.baseC1)
+	clearPages()
 	table.clear(use.hitboxes)
 	table.clear(use.actions)
+	use.handle = handle
 
 	for index, pageName in ipairs(ManualConfig.PageOrder) do
 		-- O servidor recria juntas logo após a solda; a réplica delas pode chegar depois do
@@ -192,8 +321,14 @@ local function buildBook(manual)
 		local pagePart = manual:WaitForChild(pageName, 1)
 		local motor = handle:WaitForChild(pageName .. "Motor", 1)
 		if pagePart and pagePart:IsA("BasePart") and motor and motor:IsA("Motor6D") then
-			use.motors[pageName] = motor
-			use.baseC1[pageName] = CFrame.new(motor.C1.Position)
+			local base = CFrame.new(motor.C1.Position)
+
+			local proxy = Instance.new("NumberValue")
+			proxy.Value = ManualConfig.StackAngle
+			use.angles[pageName] = proxy
+			table.insert(use.links, proxy.Changed:Connect(function(value)
+				motor.C1 = base * CFrame.Angles(0, 0, math.rad(value))
+			end))
 
 			local top = pagePart:FindFirstChild("Hitbox_Top")
 			if top and top:IsA("BasePart") then
@@ -284,10 +419,15 @@ local function exitUse()
 		link:Disconnect()
 	end
 	table.clear(use.links)
-	table.clear(use.motors)
-	table.clear(use.baseC1)
+	clearPages()
 	table.clear(use.hitboxes)
 	table.clear(use.actions)
+	use.handle = nil
+	drag = nil
+	pinchScale = nil
+	anchor = nil
+	clearReadout()
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 
 	if use.humanoid then
 		if use.humanoid.Parent then
@@ -325,17 +465,12 @@ local function enterUse()
 	end
 	use.active = true
 
-	-- Calibrando, sai só a tomada de câmera e as travas de movimento; o resto do modo em uso é
-	-- idêntico, sempre sobre o livro real.
-	local calibrating = ManualConfig.CalibrateHand
-	if not calibrating then
-		MenuController.CloseAll()
-		local mainGui = playerGui:FindFirstChild("MainGui")
-		if mainGui then
-			mainGui.Enabled = false
-		end
-		hideAccessories()
+	MenuController.CloseAll()
+	local mainGui = playerGui:FindFirstChild("MainGui")
+	if mainGui then
+		mainGui.Enabled = false
 	end
+	hideAccessories()
 	buildBook(manual)
 	-- buildBook rende: sem este corte, um exitUse durante o yield deixaria o RenderStepped
 	-- abaixo fora de use.links, sem quem desconecte.
@@ -366,53 +501,66 @@ local function enterUse()
 		return
 	end
 
-	if not calibrating then
-		-- Congelado na entrada, nunca lido de novo. Seguir o yaw vivo fecharia laço: a ControlModule
-		-- monta o vetor de movimento relativo à câmera e AutoRotate vira o personagem para ele, o
-		-- que giraria a câmera outra vez. Girando no lugar a velocidade não passa do limiar de
-		-- Running, então nada interrompia.
-		local head = character:FindFirstChild("Head") or root
-		local baseYaw = select(2, root.CFrame:ToOrientation())
-		local offset = ManualConfig.CameraOffset
-		local angles = ManualConfig.CameraAngles
-		local readCamera = CFrame.new(head.Position)
-			* CFrame.Angles(0, baseYaw, 0)
-			* CFrame.new(offset)
-			* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
-
-		workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-		-- Se o modelo sumir, re-resolve em vez de sair no primeiro frame sem Parent; só desiste
-		-- depois de REPLICA_GRACE sem ele voltar.
-		local missingSince
-		table.insert(use.links, RunService.RenderStepped:Connect(function()
-			if character.Parent == nil or root.Parent == nil then
-				exitUse()
-				return
-			end
-			if manual.Parent == nil then
-				local replacement = character:FindFirstChild(ManualConfig.ModelName)
-				if replacement and replacement ~= manual then
-					manual = replacement
-					task.spawn(buildBook, manual)
-				end
-			end
-			if manual.Parent == nil then
-				missingSince = missingSince or os.clock()
-				if os.clock() - missingSince > REPLICA_GRACE then
-					exitUse()
-				end
-				return
-			end
-			missingSince = nil
-
-			local camera = workspace.CurrentCamera
-			camera.CameraType = Enum.CameraType.Scriptable
-			camera.CFrame = readCamera
-		end))
+	anchor = nil
+	if ManualConfig.CalibrateCamera then
+		buildReadout()
 	end
+	-- Base do yaw congelada na entrada: relativa à direção que o personagem encara, para o
+	-- enquadramento não depender de para onde ele nasceu virado. Lê-la viva reabriria o laço
+	-- câmera -> personagem que AutoRotate fecha.
+	local baseYaw = select(2, root.CFrame:ToOrientation())
+	workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+	-- Se o modelo sumir, re-resolve em vez de sair no primeiro frame sem Parent; só desiste
+	-- depois de REPLICA_GRACE sem ele voltar.
+	local missingSince
+	table.insert(use.links, RunService.RenderStepped:Connect(function(delta)
+		if character.Parent == nil or root.Parent == nil then
+			exitUse()
+			return
+		end
+		if manual.Parent == nil then
+			local replacement = character:FindFirstChild(ManualConfig.ModelName)
+			if replacement and replacement ~= manual then
+				manual = replacement
+				task.spawn(buildBook, manual)
+			end
+		end
+		if manual.Parent == nil then
+			missingSince = missingSince or os.clock()
+			if os.clock() - missingSince > REPLICA_GRACE then
+				exitUse()
+			end
+			return
+		end
+		missingSince = nil
+
+		local handle = use.handle
+		if not handle or handle.Parent == nil then
+			return
+		end
+		local target = (handle.CFrame * CFrame.new(focus)).Position
+		if anchor then
+			anchor = anchor:Lerp(target, 1 - math.exp(-ManualConfig.CameraSmoothing * delta))
+		else
+			anchor = target
+		end
+
+		local camera = workspace.CurrentCamera
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.new(anchor)
+			* CFrame.Angles(0, baseYaw + orbit.yaw, 0)
+			* CFrame.Angles(orbit.pitch, 0, 0)
+			* CFrame.new(0, 0, orbit.distance)
+
+		if readout then
+			readout.Text = ("Yaw %.1f   Pitch %.1f   Dist %.2f\nFoco %.3f, %.3f, %.3f   [%s] copia"):format(
+				math.deg(orbit.yaw), math.deg(orbit.pitch), orbit.distance,
+				focus.X, focus.Y, focus.Z, ManualConfig.CameraDumpKey.Name)
+		end
+	end))
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid and not calibrating then
+	if humanoid then
 		-- Segunda trava do laço: sem AutoRotate o personagem não vira sozinho debaixo do livro.
 		use.humanoid = humanoid
 		use.autoRotate = humanoid.AutoRotate
@@ -430,12 +578,100 @@ local function enterUse()
 		end))
 	end
 
+	-- Fora da calibração a vista é a de ManualConfig e nada a move: o clique só vira página.
+	local calibrating = ManualConfig.CalibrateCamera
+	if not calibrating then
+		table.insert(use.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed then
+				return
+			end
+			if isPress(input) then
+				onTap()
+			end
+		end))
+
+		task.delay(ManualConfig.OpenDelay, function()
+			if use.token == token and use.active then
+				animatePages()
+			end
+		end)
+		return
+	end
+
+	-- Botão direito, botão do meio e roda ignoram gameProcessed: com a câmera em Scriptable o
+	-- módulo de câmera padrão ainda marca esses como consumidos e engoliria a calibração.
 	table.insert(use.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if isOrbit(input) or isPan(input) then
+			drag = { input = input, origin = input.Position, last = input.Position, moved = true }
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+			return
+		end
 		if gameProcessed then
 			return
 		end
+		if input.KeyCode == ManualConfig.CameraDumpKey then
+			dumpCamera()
+			return
+		end
 		if isPress(input) then
+			drag = { input = input, origin = input.Position, last = input.Position, moved = false }
+		end
+	end))
+
+	table.insert(use.links, UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseWheel then
+			zoomBy(-input.Position.Z * ManualConfig.CameraZoomStep)
+			return
+		end
+		if not drag or pinchScale then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+			if input == drag.input then
+				dragTo(input.Position)
+			end
+			return
+		end
+		if isPan(drag.input) then
+			panBy(input.Delta.X, input.Delta.Y)
+		elseif isOrbit(drag.input) then
+			orbitBy(input.Delta.X, input.Delta.Y)
+		else
+			dragTo(input.Position)
+		end
+	end))
+
+	table.insert(use.links, UserInputService.InputEnded:Connect(function(input)
+		if not drag or input.UserInputType ~= drag.input.UserInputType then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.Touch and input ~= drag.input then
+			return
+		end
+		local tapped = isPress(input) and not drag.moved
+		drag = nil
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		if tapped then
 			onTap()
+		end
+	end))
+
+	table.insert(use.links, UserInputService.TouchPinch:Connect(function(_, scale, _, state, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if state == Enum.UserInputState.Begin then
+			drag = nil
+			pinchScale = scale
+			return
+		end
+		if state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+			pinchScale = nil
+			return
+		end
+		if pinchScale then
+			zoomBy((pinchScale - scale) * ManualConfig.CameraPinchStep)
+			pinchScale = scale
 		end
 	end))
 
@@ -487,6 +723,7 @@ local function buildSlot(hud, template)
 end
 
 function ManualController.Start()
+	resetOrbit()
 	playerGui = player:WaitForChild("PlayerGui")
 	gui = playerGui:WaitForChild("ManualGui", 10)
 	if not gui then
