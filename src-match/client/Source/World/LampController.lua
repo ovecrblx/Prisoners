@@ -91,10 +91,15 @@ local function registerBulb(part)
 
 	local entry = group(suffix)
 
-	-- A pasta reanuncia o que já está registrado, e bulbo que o streaming levou e trouxe é peça nova.
-	for _, bulb in ipairs(entry.bulbs) do
+	-- A pasta reanuncia o que já está registrado, e bulbo que o streaming levou e trouxe é peça nova;
+	-- a mesma varredura solta as peças mortas, senão a lista cresceria um cadáver por ciclo.
+	for index = #entry.bulbs, 1, -1 do
+		local bulb = entry.bulbs[index]
 		if bulb == part then
 			return
+		end
+		if bulb.Parent == nil then
+			table.remove(entry.bulbs, index)
 		end
 	end
 
@@ -113,9 +118,13 @@ local function registerSwitch(part)
 
 	local entry = group(suffix)
 
-	for _, button in ipairs(entry.buttons) do
+	for index = #entry.buttons, 1, -1 do
+		local button = entry.buttons[index]
 		if button.part == part then
 			return
+		end
+		if button.part.Parent == nil then
+			table.remove(entry.buttons, index)
 		end
 	end
 
@@ -131,6 +140,10 @@ local function registerSwitch(part)
 	if not watched[model] then
 		watched[model] = model:GetAttributeChangedSignal(LampConfig.OnAttribute):Connect(function()
 			setState(suffix, published(model), true)
+		end)
+		-- Modelo destruído sai do mapa, senão a chave morta ficaria para sempre.
+		model.Destroying:Once(function()
+			watched[model] = nil
 		end)
 	end
 

@@ -155,6 +155,14 @@ local function refresh(entry)
 
 	entry.followers = followers
 
+	-- Offset de peça que já não existe sai do cache; a que voltar pelo streaming é peça nova e mede
+	-- de novo.
+	for part in pairs(entry.offsets) do
+		if part.Parent == nil then
+			entry.offsets[part] = nil
+		end
+	end
+
 	-- A paleta sai da cor autorada da peça, e só quando a peça TROCA: capturar de novo a mesma no
 	-- meio de uma piscada assaria o escurecido como se fosse o aceso.
 	local led = entry.model:FindFirstChild(LED_NAME, true)
