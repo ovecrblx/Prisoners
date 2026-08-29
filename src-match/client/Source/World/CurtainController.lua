@@ -212,16 +212,19 @@ local function register(model)
 
 	curtains[model] = entry
 
-	model:GetAttributeChangedSignal(DoorConfig.ClosedAttribute):Connect(function()
-		setState(entry, model:GetAttribute(DoorConfig.ClosedAttribute) == true, true)
-	end)
-
-	-- Com streaming as peças podem chegar depois do Model.
-	model.ChildAdded:Connect(function(child)
-		if child:IsA("BasePart") then
-			setState(entry, entry.closed, false)
-		end
-	end)
+	-- Guardadas para o ChildRemoved soltar: modelo que sai e volta re-registra, e a conexão antiga
+	-- duplicaria o setState a cada ciclo de streaming.
+	entry.links = {
+		model:GetAttributeChangedSignal(DoorConfig.ClosedAttribute):Connect(function()
+			setState(entry, model:GetAttribute(DoorConfig.ClosedAttribute) == true, true)
+		end),
+		-- Com streaming as peças podem chegar depois do Model.
+		model.ChildAdded:Connect(function(child)
+			if child:IsA("BasePart") then
+				setState(entry, entry.closed, false)
+			end
+		end),
+	}
 
 	setState(entry, entry.closed, false)
 end
@@ -248,6 +251,9 @@ function CurtainController.Start()
 	folder.ChildRemoved:Connect(function(child)
 		local entry = curtains[child]
 		if entry then
+			for _, link in ipairs(entry.links) do
+				link:Disconnect()
+			end
 			active[entry] = nil
 			curtains[child] = nil
 		end

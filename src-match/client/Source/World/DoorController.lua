@@ -229,16 +229,19 @@ local function register(model)
 
 	doors[model] = door
 
-	model:GetAttributeChangedSignal(DoorConfig.StateAttribute):Connect(function()
-		setState(door, targetOf(model), true)
-	end)
-
-	-- Com streaming as folhas podem chegar depois do Model.
-	model.ChildAdded:Connect(function(child)
-		if child:IsA("BasePart") then
-			setState(door, targetOf(model), false)
-		end
-	end)
+	-- Guardadas para o ChildRemoved soltar: modelo que sai e volta re-registra, e a conexão antiga
+	-- duplicaria o setState a cada ciclo de streaming.
+	door.links = {
+		model:GetAttributeChangedSignal(DoorConfig.StateAttribute):Connect(function()
+			setState(door, targetOf(model), true)
+		end),
+		-- Com streaming as folhas podem chegar depois do Model.
+		model.ChildAdded:Connect(function(child)
+			if child:IsA("BasePart") then
+				setState(door, targetOf(model), false)
+			end
+		end),
+	}
 
 	setState(door, targetOf(model), false)
 end
@@ -263,6 +266,9 @@ function DoorController.Start()
 	folder.ChildRemoved:Connect(function(child)
 		local door = doors[child]
 		if door then
+			for _, link in ipairs(door.links) do
+				link:Disconnect()
+			end
 			active[door] = nil
 			doors[child] = nil
 		end
