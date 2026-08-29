@@ -451,9 +451,10 @@ function AreaTeleportService.Init()
 	RemotesFolder:SetAttribute("MinPlayers", Config.MinPlayers)
 	RemotesFolder:SetAttribute("MaxPlayers", Config.MaxPlayers)
 
-	mainSpawn = workspace:FindFirstChild(Config.MainSpawnName)
+	-- Recursivo: o SpawnLocation mora dentro da pasta dos pads, não na raiz do workspace.
+	mainSpawn = workspace:FindFirstChild(Config.MainSpawnName, true)
 	if not mainSpawn then
-		warn(string.format("[AreaTeleportService] workspace.%s não encontrado — quem sair da party fica em pé no pad.", Config.MainSpawnName))
+		warn(string.format("[AreaTeleportService] %s não encontrado no workspace — quem sair da party fica em pé no pad.", Config.MainSpawnName))
 	end
 
 	if Config.MatchPlaceId == 0 then
