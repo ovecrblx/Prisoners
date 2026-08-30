@@ -1,14 +1,11 @@
--- Caderno do próprio jogador: coleta na mesa, slot no HUD, câmera diegética e virada de páginas
--- por raycast nas hitboxes. Coletar, devolver e alternar cintura/mão acontecem aqui e valem no
--- mesmo quadro; o servidor é avisado depois, só para os outros clientes desenharem. O eco do
--- servidor não volta para cá, então dois toques rápidos não brigam com a latência.
+-- Caderno do próprio jogador: coleta na mesa, câmera diegética e virada de páginas por raycast nas
+-- hitboxes. Coletar, devolver e alternar cintura/mão acontecem aqui e valem no mesmo quadro; o
+-- servidor é avisado depois, só para os outros clientes desenharem. O eco do servidor não volta
+-- para cá, então dois toques rápidos não brigam com a latência.
 -- Coletado é estado de rodada, não de vida: o slot volta sozinho no respawn, e só o hold devolve
--- o caderno à mesa.
--- Toda conexão entra em session.links (slot/hold/tecla) ou use.links (modo em uso) e morre no
--- release() — o modo em uso entra e sai várias vezes e conexão órfã duplicaria gesto.
--- O HUD é o template ImageButton dentro de ManualGui.Hud: Press leva a imagem do item, Key o
--- rótulo da tecla, Fill o progresso do hold. O template fica invisível; cada item é um clone.
--- ManualGui e MainGui são irmãs: o modo em uso desliga só a MainGui.
+-- o caderno à mesa. O slot em si, o hold e a tecla são do ItemHud.
+-- Toda conexão do modo em uso entra em use.links e morre no exitUse — o modo entra e sai várias
+-- vezes e conexão órfã duplicaria gesto.
 -- No modo em uso a câmera orbita o ponto de mira do livro com o topo no mundo: segue a posição
 -- dele, nunca a rotação, então o horizonte não tomba e a vista não gira junto com a mão. Com
 -- CalibrateCamera um painel mostra os quatro valores vivos e CameraDumpKey imprime.
@@ -17,41 +14,34 @@ local ManualController = {}
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
-local ManualPickup = require(script.Parent:WaitForChild("ManualPickup"))
+local Items = script.Parent.Parent:WaitForChild("Items")
+local ItemHold = require(Items:WaitForChild("ItemHold"))
+local ItemHud = require(Items:WaitForChild("ItemHud"))
+local ItemPickup = require(Items:WaitForChild("ItemPickup"))
+local ItemView = require(Items:WaitForChild("ItemView"))
 local ManualView = require(script.Parent:WaitForChild("ManualView"))
-local ManualConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ManualConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
+local ManualConfig = require(Shared:WaitForChild("ManualConfig"))
 
--- Valores visuais do slot provisório, até a arte final.
-local SLOT_LAYOUT_ORDER = 1
-local KEY_LABEL = "1" -- rótulo exibido; a tecla real é ManualConfig.HotKey
-local FILL_HIDDEN = UDim2.fromScale(0, 0)
-local FILL_FULL = UDim2.fromScale(1, 1)
-
-local FILL_RESET_TIME = 0.2 -- segundos para o Fill recuar em hold cancelado
+local ITEM_ID = "Manual"
 local MOVE_SPEED_THRESHOLD = 0.5 -- velocidade de Running que fecha o caderno
 
 -- CurrentCamera é recriada no spawn: sempre resolver na hora, nunca guardar no boot.
 local player = Players.LocalPlayer
 
-local equipRemote
-local toggleModeRemote
-local unequipRemote
+local actionRemote
+local pickup
+local slot
 
-local playerGui
-local gui, slot, press, fill
-
-local session = { links = {}, holdTween = nil, holdStart = 0, bound = false }
 local use = { links = {}, hitboxes = {}, actions = {}, active = false, token = 0 }
 local collected = false
 local equipped = false
 local inHand = false
 local currentPage = 1
 local hiddenAccessories = {}
-local holdTrack
-local holdTrackCharacter
 
 -- Órbita viva da câmera: radianos e studs, semeada de ManualConfig e mantida entre aberturas
 -- para a calibração não se perder a cada fechada.
@@ -109,19 +99,6 @@ local function dumpCamera()
 		math.deg(orbit.yaw), math.deg(orbit.pitch), orbit.distance))
 end
 
-local function resetHold(instant)
-	if session.holdTween then
-		session.holdTween:Cancel()
-		session.holdTween = nil
-	end
-	if instant then
-		fill.Size = FILL_HIDDEN
-	else
-		local info = TweenInfo.new(FILL_RESET_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		TweenService:Create(fill, info, { Size = FILL_HIDDEN }):Play()
-	end
-end
-
 local function isPress(input)
 	return input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch
@@ -146,8 +123,9 @@ local function dragTo(position)
 	end
 end
 
--- Painel de calibração, montado em código: a ManualGui publicada não tem lugar para ele.
+-- Painel de calibração, montado em código: a GUI publicada não tem lugar para ele.
 local function buildReadout()
+	local gui = ItemHud.Gui()
 	if readout or not gui then
 		return
 	end
@@ -262,31 +240,6 @@ local function onTap()
 	end
 end
 
--- Animação de segurar: em personagem de jogador a replicação de animação é cliente -> servidor,
--- nunca o contrário, então quem vê o braço subir nos outros é este track tocando no dono deles.
-local function ensureTrack(character)
-	if holdTrack and holdTrackCharacter == character then
-		return holdTrack
-	end
-	holdTrack = nil
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
-		return nil
-	end
-	local animation = Instance.new("Animation")
-	animation.AnimationId = ManualConfig.HoldAnimationId
-	local ok, track = pcall(animator.LoadAnimation, animator, animation)
-	if not ok then
-		return nil
-	end
-	track.Priority = Enum.AnimationPriority.Action
-	track.Looped = true
-	holdTrackCharacter = character
-	holdTrack = track
-	return track
-end
-
 local function exitUse()
 	use.token += 1
 	currentPage = 1
@@ -295,9 +248,7 @@ local function exitUse()
 	end
 	use.active = false
 
-	if holdTrack then
-		holdTrack:Stop()
-	end
+	ItemHold.Release(ITEM_ID)
 
 	for _, link in ipairs(use.links) do
 		link:Disconnect()
@@ -322,7 +273,8 @@ local function exitUse()
 	workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
 	restoreAccessories()
 
-	local mainGui = playerGui:FindFirstChild("MainGui")
+	local playerGui = player:FindFirstChild("PlayerGui")
+	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")
 	if mainGui then
 		mainGui.Enabled = true
 	end
@@ -333,19 +285,17 @@ local function enterUse()
 	local token = use.token
 
 	local character = player.Character
-	local view = character and ManualView.Get(character)
+	local view = character and ItemView.Get(character, ITEM_ID)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not (view and root) then
 		return
 	end
 	use.active = true
 
-	local track = ensureTrack(character)
-	if track then
-		track:Play()
-	end
+	ItemHold.Claim(ITEM_ID)
 
-	local mainGui = playerGui:FindFirstChild("MainGui")
+	local playerGui = player:FindFirstChild("PlayerGui")
+	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")
 	if mainGui then
 		mainGui.Enabled = false
 	end
@@ -511,25 +461,38 @@ function setHand(value)
 	inHand = value
 	local character = player.Character
 	if character then
-		ManualView.SetPose(character, value)
+		ItemView.SetPose(character, ITEM_ID, value)
 	end
 	if value then
 		enterUse()
 	else
 		exitUse()
 	end
-	toggleModeRemote:FireServer(value)
+	actionRemote:FireServer(ITEM_ID, "inHand", value)
 end
 
 local function release()
 	exitUse()
-	resetHold(true)
-	for _, link in ipairs(session.links) do
-		link:Disconnect()
+	if slot then
+		slot:Hide()
 	end
-	table.clear(session.links)
-	session.bound = false
-	gui.Enabled = false
+end
+
+local function equip(character)
+	if not ItemView.Show(character, ITEM_ID) then
+		return
+	end
+	if player.Character ~= character then
+		ItemView.Hide(character, ITEM_ID)
+		return
+	end
+	equipped = true
+	inHand = false
+	ItemView.SetPose(character, ITEM_ID, false)
+	if slot then
+		slot:Show()
+	end
+	task.spawn(ItemHold.Preload, ITEM_ID, character)
 end
 
 -- Hold no slot devolve o caderno em vez de sumir com ele: o exemplar volta a esperar na mesa, de
@@ -541,93 +504,10 @@ local function drop()
 	local character = player.Character
 	release()
 	if character then
-		ManualView.Hide(character)
+		ItemView.Hide(character, ITEM_ID)
 	end
-	ManualPickup.Show()
-	unequipRemote:FireServer()
-end
-
-local function startHold()
-	if session.holdTween then
-		return
-	end
-	session.holdStart = os.clock()
-
-	fill.Size = FILL_HIDDEN
-
-	local tween = TweenService:Create(
-		fill,
-		TweenInfo.new(ManualConfig.HoldTime, Enum.EasingStyle.Linear),
-		{ Size = FILL_FULL }
-	)
-	session.holdTween = tween
-	tween.Completed:Connect(function(state)
-		if state ~= Enum.PlaybackState.Completed then
-			return
-		end
-		session.holdTween = nil
-		-- Soltar depois do disparo não pode virar clique curto.
-		session.holdStart = 0
-		resetHold(true)
-		drop()
-	end)
-	tween:Play()
-end
-
-local function stopHold()
-	if not session.holdTween then
-		return
-	end
-	local held = os.clock() - session.holdStart
-	resetHold(false)
-	if session.holdStart > 0 and held < ManualConfig.HoldTime then
-		setHand(not inHand)
-	end
-end
-
-local function bindButton()
-	if session.bound then
-		return
-	end
-	session.bound = true
-
-	table.insert(session.links, press.InputBegan:Connect(function(input)
-		if isPress(input) then
-			startHold()
-		end
-	end))
-	table.insert(session.links, press.InputEnded:Connect(function(input)
-		if isPress(input) then
-			stopHold()
-		end
-	end))
-	table.insert(session.links, press.MouseLeave:Connect(stopHold))
-	table.insert(session.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-		if input.KeyCode == ManualConfig.HotKey and gui.Enabled then
-			setHand(not inHand)
-		end
-	end))
-end
-
-local function equip(character)
-	if not ManualView.Show(character) then
-		return
-	end
-	if player.Character ~= character then
-		ManualView.Hide(character)
-		return
-	end
-	equipped = true
-	inHand = false
-	ManualView.SetPose(character, false)
-	gui.Enabled = true
-	bindButton()
-	-- Carregada ao equipar, não no primeiro uso: um track que só busca o asset no toggle chega
-	-- depois de a amostragem da mão já ter congelado o C0.
-	task.spawn(ensureTrack, character)
+	pickup:Show()
+	actionRemote:FireServer(ITEM_ID, "equipped", false)
 end
 
 -- Coleta na mesa: o exemplar de lá some no mesmo quadro e o caderno nasce no personagem, sem
@@ -638,64 +518,35 @@ local function collect()
 		return
 	end
 	collected = true
-	ManualPickup.Hide()
-	equipRemote:FireServer()
+	pickup:Hide()
+	actionRemote:FireServer(ITEM_ID, "equipped", true)
 	task.spawn(equip, character)
-end
-
-local function buildSlot(hud, template)
-	template.Visible = false
-
-	slot = template:Clone()
-	slot.Name = ManualConfig.ModelName
-	slot.Visible = true
-	slot.LayoutOrder = SLOT_LAYOUT_ORDER
-
-	press = slot:FindFirstChild("Press")
-	fill = slot:FindFirstChild("Fill")
-	if not (press and press:IsA("GuiButton") and fill and fill:IsA("GuiObject")) then
-		slot:Destroy()
-		slot = nil
-		return false
-	end
-
-	press.Image = ManualConfig.IconId
-	fill.Size = FILL_HIDDEN
-
-	local key = slot:FindFirstChild("Key")
-	if key and (key:IsA("TextButton") or key:IsA("TextLabel")) then
-		key.Text = KEY_LABEL
-	end
-
-	slot.Parent = hud
-	return true
 end
 
 function ManualController.Start()
 	resetOrbit()
-	playerGui = player:WaitForChild("PlayerGui")
-	gui = playerGui:WaitForChild("ManualGui", 10)
-	if not gui then
-		warn("[Manual] ManualGui não apareceu no PlayerGui")
+
+	local remotes = ReplicatedStorage:WaitForChild(ItemConfig.RemotesFolderName)
+	actionRemote = remotes:WaitForChild(ItemConfig.ActionRemote)
+
+	slot = ItemHud.Slot(ITEM_ID, ManualConfig.IconId, ManualConfig.KeyLabel, ManualConfig.HotKey)
+	if not slot then
+		warn("[Manual] sem slot no HUD; o caderno fica sem coleta")
 		return
 	end
-
-	local hud = gui:FindFirstChild("Hud")
-	local template = hud and hud:FindFirstChild("ImageButton")
-	if not template or not buildSlot(hud, template) then
-		warn("[Manual] estrutura do ManualGui incompleta")
-		return
+	slot.tapped = function()
+		setHand(not inHand)
 	end
+	slot.held = drop
 
-	gui.Enabled = false
+	ItemHold.Bind(ITEM_ID, ManualConfig.HoldAnimationId, function()
+		setHand(false)
+	end)
 
-	local remotes = ReplicatedStorage:WaitForChild(ManualConfig.RemotesFolderName)
-	equipRemote = remotes:WaitForChild(ManualConfig.EquipRemote)
-	toggleModeRemote = remotes:WaitForChild(ManualConfig.ToggleModeRemote)
-	unequipRemote = remotes:WaitForChild(ManualConfig.UnequipRemote)
-
-	ManualPickup.Bind(collect)
-	ManualPickup.Show()
+	pickup = ItemPickup.New(ITEM_ID, ManualConfig)
+	pickup.dress = ManualView.Dress
+	pickup:Bind(collect)
+	pickup:Show()
 
 	player.CharacterAdded:Connect(function(character)
 		if collected then

@@ -1,0 +1,310 @@
+-- Réplica local dos itens equipáveis, uma por personagem e por item: o dono monta a sua e monta
+-- também a dos outros jogadores, a partir dos templates em ReplicatedStorage.Client. Nada disso
+-- existe no servidor, então nenhuma junta, pose ou tween passa pela rede — o dono vê a resposta no
+-- mesmo quadro.
+-- A pose sai do C0 do Motor6D que prende o Handle ao corpo. Na mão o C0 é amostrado enquanto a
+-- animação de segurar levanta o braço, e congela em HandSettleTime; dali o item é rígido no espaço
+-- da mão. Item com HandTracksFacing nunca congela: a mira dele é refeita todo quadro, para a
+-- torção da animação de segurar não levar o item junto. Um único RenderStepped amostra todos os
+-- itens de todos os personagens.
+-- Cada item se registra com Define: `config` traz a pose, e `dress`/`pose` são os ganchos do que só
+-- aquele item sabe fazer com o próprio modelo.
+local ItemView = {}
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemConfig"))
+
+local TEMPLATE_TIMEOUT = 10 -- segundos esperando os templates aparecerem no boot
+local WAIST_TIMEOUT = 5 -- segundos esperando a parte da cintura no personagem
+
+local player = Players.LocalPlayer
+
+local specs = {}
+local templates = {}
+local views = {}
+local pending = {}
+local settleLink
+
+local function poseC0(character, part0, config)
+	if part0.Name ~= ItemConfig.HandPartName then
+		local angles = config.WaistAngles
+		return CFrame.new(config.WaistOffset)
+			* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
+	end
+
+	-- Item que mira não tem pose congelada para assar: a constante abaixo o prenderia à mão.
+	local baked = config.HandC0Angles
+	if not config.HandTracksFacing and config.HandC0Offset and baked then
+		return CFrame.new(config.HandC0Offset)
+			* CFrame.fromOrientation(math.rad(baked.X), math.rad(baked.Y), math.rad(baked.Z))
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return nil
+	end
+	local angles = config.HandAngles
+	local facing = CFrame.Angles(0, select(2, root.CFrame:ToOrientation()), 0)
+	local wanted = facing
+		* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
+	local place = CFrame.new((part0.CFrame * CFrame.new(config.HandOffset)).Position) * wanted.Rotation
+	return part0.CFrame:Inverse() * place
+end
+
+local function readback(itemId, joint)
+	local x, y, z = joint.C0:ToOrientation()
+	warn(("[Item] pose travada da mão — %s\n"
+		.. "Config.HandC0Offset = Vector3.new(%.4f, %.4f, %.4f)\n"
+		.. "Config.HandC0Angles = Vector3.new(%.2f, %.2f, %.2f)"):format(
+		itemId, joint.C0.Position.X, joint.C0.Position.Y, joint.C0.Position.Z,
+		math.deg(x), math.deg(y), math.deg(z)))
+end
+
+local function settleView(character, view, delta)
+	local part0 = view.joint.Part0
+	local c0 = part0 and poseC0(character, part0, view.config)
+	if not c0 then
+		return
+	end
+	view.joint.C0 = c0
+	-- Com HandTracksFacing o C0 nunca congela: a posição segue a mão e a mira segue o personagem,
+	-- todo quadro, então a torção da animação de segurar não leva o item junto.
+	if view.config.HandTracksFacing then
+		return
+	end
+	view.held += delta
+	if view.held < view.config.HandSettleTime then
+		return
+	end
+	view.handC0 = c0
+	if view.config.CalibrateHand and character == player.Character then
+		readback(view.itemId, view.joint)
+	end
+end
+
+local function settle(delta)
+	for character, byItem in pairs(views) do
+		for itemId, view in pairs(byItem) do
+			if character.Parent == nil or view.model.Parent == nil then
+				ItemView.Hide(character, itemId)
+			else
+				if view.inHand and not view.handC0 then
+					settleView(character, view, delta)
+				end
+				-- Roda em toda réplica, a do dono e a dos outros: efeito que depende do mundo em
+				-- volta tem que ser refeito na máquina de quem olha, não mandado pela rede.
+				local spec = specs[itemId]
+				if spec.step then
+					spec.step(view, delta, character)
+				end
+			end
+		end
+	end
+end
+
+local function build(character, itemId, waist)
+	local spec = specs[itemId]
+	local model = templates[itemId]:Clone()
+	model.Name = itemId
+	local handle = model:FindFirstChild(ItemConfig.HandleName)
+	if not handle or not handle:IsA("BasePart") then
+		model:Destroy()
+		warn("[Item] template de " .. itemId .. " sem " .. ItemConfig.HandleName)
+		return nil
+	end
+
+	-- Template de item de cenário pode vir ancorado; preso ao corpo, ancorado não acompanha.
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = false
+		end
+	end
+
+	local view = {
+		itemId = itemId,
+		config = spec.config,
+		model = model,
+		handle = handle,
+		inHand = false,
+		held = 0,
+	}
+	if spec.dress then
+		spec.dress(view)
+	end
+
+	local joint = Instance.new("Motor6D")
+	joint.Name = ItemConfig.JointName
+	joint.Part0 = waist
+	joint.Part1 = handle
+	joint.C1 = CFrame.identity
+	joint.C0 = poseC0(character, waist, spec.config)
+	joint.Parent = handle
+
+	view.joint = joint
+	model.Parent = character
+	return view
+end
+
+function ItemView.Define(itemId, spec)
+	specs[itemId] = spec
+end
+
+function ItemView.Template(itemId)
+	return templates[itemId]
+end
+
+function ItemView.Get(character, itemId)
+	local byItem = views[character]
+	return byItem and byItem[itemId]
+end
+
+function ItemView.Show(character, itemId)
+	local existing = ItemView.Get(character, itemId)
+	if existing then
+		return existing
+	end
+	if not (templates[itemId] and specs[itemId]) then
+		return nil
+	end
+	-- CharacterAdded chega antes das partes: esperar aqui deixa Show seguro de chamar de qualquer
+	-- evento, e `pending` impede que dois avisos seguidos montem dois exemplares.
+	local waiting = pending[character]
+	if not waiting then
+		waiting = {}
+		pending[character] = waiting
+	end
+	if waiting[itemId] then
+		repeat
+			task.wait()
+		until not waiting[itemId]
+		return ItemView.Get(character, itemId)
+	end
+
+	waiting[itemId] = true
+	local waist = character:WaitForChild(ItemConfig.WaistPartName, WAIST_TIMEOUT)
+	waiting[itemId] = nil
+	if next(waiting) == nil then
+		pending[character] = nil
+	end
+	if character.Parent == nil then
+		return nil
+	end
+	if not waist or not waist:IsA("BasePart") then
+		warn("[Item] " .. ItemConfig.WaistPartName .. " ausente em " .. character.Name)
+		return nil
+	end
+
+	local view = build(character, itemId, waist)
+	if not view then
+		return nil
+	end
+
+	local byItem = views[character]
+	if not byItem then
+		byItem = {}
+		views[character] = byItem
+	end
+	byItem[itemId] = view
+
+	if not settleLink then
+		settleLink = RunService.RenderStepped:Connect(settle)
+	end
+	return view
+end
+
+function ItemView.Hide(character, itemId)
+	local byItem = views[character]
+	local view = byItem and byItem[itemId]
+	if not view then
+		return
+	end
+	byItem[itemId] = nil
+	if next(byItem) == nil then
+		views[character] = nil
+	end
+
+	local spec = specs[itemId]
+	if spec and spec.clear then
+		spec.clear(view)
+	end
+	view.model:Destroy()
+
+	if next(views) == nil and settleLink then
+		settleLink:Disconnect()
+		settleLink = nil
+	end
+end
+
+function ItemView.HideAll(character)
+	local byItem = views[character]
+	if not byItem then
+		return
+	end
+	for itemId in pairs(byItem) do
+		ItemView.Hide(character, itemId)
+	end
+end
+
+function ItemView.SetPose(character, itemId, inHand)
+	local view = ItemView.Get(character, itemId)
+	if not view then
+		return
+	end
+	local partName = if inHand then ItemConfig.HandPartName else ItemConfig.WaistPartName
+	local part0 = character:FindFirstChild(partName)
+	if not part0 or not part0:IsA("BasePart") then
+		warn("[Item] " .. partName .. " ausente em " .. character.Name)
+		return
+	end
+
+	view.inHand = inHand
+	view.held = 0
+	view.handC0 = nil
+	view.joint.Part0 = part0
+	local c0 = poseC0(character, part0, view.config)
+	if c0 then
+		view.joint.C0 = c0
+	end
+	-- Com HandC0 preenchido a pose já é final: nada a amostrar, nada a acomodar. Item que mira
+	-- nunca chega a esse ponto — para ele a amostragem é o estado permanente.
+	if
+		inHand
+		and not view.config.HandTracksFacing
+		and view.config.HandC0Offset
+		and view.config.HandC0Angles
+	then
+		view.handC0 = view.joint.C0
+	end
+
+	local spec = specs[itemId]
+	if spec and spec.pose then
+		spec.pose(view, inHand)
+	end
+end
+
+-- Estado ligado/desligado de item que tem um: o gancho é do item, porque só ele sabe o que acender
+-- dentro do próprio modelo. Item sem gancho ignora.
+function ItemView.SetPower(character, itemId, on)
+	local view = ItemView.Get(character, itemId)
+	local spec = specs[itemId]
+	if view and spec and spec.power then
+		spec.power(view, on)
+	end
+end
+
+function ItemView.Init()
+	local client = ReplicatedStorage:WaitForChild("Client", TEMPLATE_TIMEOUT)
+	local folder = client and client:WaitForChild(ItemConfig.TemplateFolder, TEMPLATE_TIMEOUT)
+	for _, itemId in ipairs(ItemConfig.Order) do
+		templates[itemId] = folder and folder:FindFirstChild(itemId)
+		if not templates[itemId] then
+			warn("[Item] ReplicatedStorage.Client." .. ItemConfig.TemplateFolder .. "." .. itemId
+				.. " ausente — ninguém desenha esse item")
+		end
+	end
+end
+
+return ItemView

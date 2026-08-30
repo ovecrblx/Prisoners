@@ -1,0 +1,284 @@
+-- Lanterna do próprio jogador: coleta no cenário, alternância cintura/mão pelo slot do HUD e a luz
+-- na tecla PowerKey. Coletar, devolver, alternar e acender acontecem aqui e valem no mesmo quadro;
+-- o servidor é avisado depois, só para os outros clientes desenharem. O eco do servidor não volta
+-- para cá, então dois toques rápidos não brigam com a latência.
+-- Coletado é estado de rodada, não de vida: o slot volta sozinho no respawn, e só o hold devolve a
+-- lanterna ao cenário. A luz é da mão: acende só com a lanterna lá, guardar apaga, e toda réplica
+-- nova nasce apagada.
+-- ColorMap é Plugin Security e nenhum script de runtime a escreve: a troca de aparência é de
+-- instância, reparentando o skin certo de Flashlight.Skins no Handle.
+local FlashlightController = {}
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local Items = script.Parent.Parent:WaitForChild("Items")
+local ItemHold = require(Items:WaitForChild("ItemHold"))
+local ItemHud = require(Items:WaitForChild("ItemHud"))
+local ItemPickup = require(Items:WaitForChild("ItemPickup"))
+local ItemView = require(Items:WaitForChild("ItemView"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
+local FlashlightConfig = require(Shared:WaitForChild("FlashlightConfig"))
+
+local ITEM_ID = "Flashlight"
+
+local player = Players.LocalPlayer
+
+local actionRemote
+local pickup
+local slot
+
+local collected = false
+local equipped = false
+local inHand = false
+local lit = false
+
+-- O skin em uso mora no Handle e o de reserva na pasta, então procurar só na pasta acha um só a
+-- partir da primeira troca. Os dois lugares valem.
+local function findSkin(model, handle, name)
+	local folder = model:FindFirstChild(FlashlightConfig.SkinFolderName)
+	return (folder and folder:FindFirstChild(name)) or handle:FindFirstChild(name)
+end
+
+-- Um só lugar decide o que "aceso" quer dizer no modelo, e vale igual para o exemplar do cenário,
+-- para a réplica do dono e para a dos outros.
+local function applyPower(model, handle, on)
+	local spot = handle:FindFirstChildOfClass("SpotLight")
+	local beam = handle:FindFirstChildOfClass("Beam")
+	if spot then
+		spot.Enabled = on
+	end
+	if beam then
+		beam.Enabled = on
+	end
+
+	local folder = model:FindFirstChild(FlashlightConfig.SkinFolderName)
+	local skinOn = findSkin(model, handle, FlashlightConfig.SkinOnName)
+	local skinOff = findSkin(model, handle, FlashlightConfig.SkinOffName)
+	if not (folder and skinOn and skinOff) then
+		warn("[Flashlight] " .. FlashlightConfig.SkinFolderName .. " incompleta no template")
+		return
+	end
+
+	-- O skin que veio aplicado no template sai na primeira troca: daqui em diante quem manda no
+	-- Handle são os dois de Skins, que ficam vivos e só trocam de pai.
+	local applied = handle:FindFirstChildOfClass("SurfaceAppearance")
+	if applied and applied ~= skinOn and applied ~= skinOff then
+		applied:Destroy()
+	end
+
+	local wanted = if on then skinOn else skinOff
+	local other = if on then skinOff else skinOn
+	other.Parent = folder
+	wanted.Parent = handle
+end
+
+local function dressPickup(model, handle)
+	applyPower(model, handle, false)
+end
+
+-- A geometria autorada do feixe, lida uma vez por réplica. As pontas saem do próprio Beam, não do
+-- nome delas: quem manda no que é perto e longe é Attachment0 e Attachment1.
+local function captureBeam(view)
+	local beam = view.handle:FindFirstChildOfClass("Beam")
+	local near = beam and beam.Attachment0
+	local far = beam and beam.Attachment1
+	if not (near and far) then
+		warn("[Flashlight] Beam sem as duas attachments; o feixe não vai ser recortado")
+		return
+	end
+	local span = far.Position - near.Position
+	if span.Magnitude < 1e-4 then
+		return
+	end
+
+	view.beam = beam
+	view.beamFar = far
+	view.beamOrigin = near.Position
+	view.beamAxis = span.Unit
+	view.beamSpan = span.Magnitude
+	view.beamWidth = beam.Width1
+end
+
+-- Recorta o feixe na primeira superfície à frente, e no teto de BeamRange quando não há nenhuma.
+-- Sem isto o feixe atravessa parede: Beam é desenho, não consulta o mundo sozinho.
+-- A largura acompanha o corte para o cone manter o ângulo — parada em 12 studs de largura contra
+-- uma parede a dois studs, a ponta viraria um disco.
+local function aimBeam(view, character)
+	local beam = view.beam
+	if not (beam and beam.Enabled) then
+		return
+	end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	params.IgnoreWater = true
+
+	local handle = view.handle
+	local origin = handle.CFrame * view.beamOrigin
+	local direction = handle.CFrame:VectorToWorldSpace(view.beamAxis)
+	local hit = workspace:Raycast(origin, direction * FlashlightConfig.BeamRange, params)
+	local reach = math.min(hit and hit.Distance or FlashlightConfig.BeamRange, FlashlightConfig.BeamRange)
+
+	view.beamFar.Position = view.beamOrigin + view.beamAxis * reach
+	beam.Width1 = beam.Width0 + (view.beamWidth - beam.Width0) * (reach / view.beamSpan)
+end
+
+-- A luz é da mão, não da posse: quem chama já garantiu que a lanterna está lá.
+local function setPower(value)
+	if lit == value then
+		return
+	end
+	lit = value
+	local character = player.Character
+	if character then
+		ItemView.SetPower(character, ITEM_ID, value)
+	end
+	actionRemote:FireServer(ITEM_ID, "on", value)
+end
+
+-- Pose local primeiro, aviso ao servidor depois. Vai o valor absoluto, não um "alterna": assim
+-- dois toques rápidos convergem em vez de depender da ordem em que os avisos chegam lá.
+local function setHand(value)
+	if not equipped or inHand == value then
+		return
+	end
+	-- Guardar apaga: na cintura a lanterna não acende, e sair da mão com ela acesa deixaria o
+	-- facho saindo do quadril.
+	if not value then
+		setPower(false)
+	end
+	inHand = value
+	local character = player.Character
+	if character then
+		ItemView.SetPose(character, ITEM_ID, value)
+	end
+	if value then
+		ItemHold.Claim(ITEM_ID)
+	else
+		ItemHold.Release(ITEM_ID)
+	end
+	actionRemote:FireServer(ITEM_ID, "inHand", value)
+end
+
+local function equip(character)
+	if not ItemView.Show(character, ITEM_ID) then
+		return
+	end
+	if player.Character ~= character then
+		ItemView.Hide(character, ITEM_ID)
+		return
+	end
+	equipped = true
+	inHand = false
+	lit = false
+	ItemView.SetPose(character, ITEM_ID, false)
+	if slot then
+		slot:Show()
+	end
+	task.spawn(ItemHold.Preload, ITEM_ID, character)
+end
+
+-- Hold no slot devolve a lanterna em vez de sumir com ela: o exemplar volta a esperar no cenário,
+-- de onde quem devolveu pode pegar outra vez.
+local function drop()
+	collected = false
+	equipped = false
+	inHand = false
+	lit = false
+	local character = player.Character
+	ItemHold.Release(ITEM_ID)
+	if slot then
+		slot:Hide()
+	end
+	if character then
+		ItemView.Hide(character, ITEM_ID)
+	end
+	pickup:Show()
+	actionRemote:FireServer(ITEM_ID, "equipped", false)
+end
+
+-- Coleta no cenário: o exemplar de lá some no mesmo quadro e a lanterna nasce no personagem, sem
+-- esperar resposta. O servidor é avisado depois, e é ele quem devolve a lanterna no respawn.
+local function collect()
+	local character = player.Character
+	if collected or not character then
+		return
+	end
+	collected = true
+	pickup:Hide()
+	actionRemote:FireServer(ITEM_ID, "equipped", true)
+	task.spawn(equip, character)
+end
+
+function FlashlightController.Init()
+	ItemView.Define(ITEM_ID, {
+		config = FlashlightConfig,
+
+		dress = function(view)
+			applyPower(view.model, view.handle, false)
+			captureBeam(view)
+		end,
+
+		power = function(view, on)
+			applyPower(view.model, view.handle, on)
+		end,
+
+		step = function(view, _, character)
+			aimBeam(view, character)
+		end,
+	})
+end
+
+function FlashlightController.Start()
+	local remotes = ReplicatedStorage:WaitForChild(ItemConfig.RemotesFolderName)
+	actionRemote = remotes:WaitForChild(ItemConfig.ActionRemote)
+
+	slot = ItemHud.Slot(ITEM_ID, FlashlightConfig.IconId, FlashlightConfig.KeyLabel, FlashlightConfig.HotKey)
+	if not slot then
+		warn("[Flashlight] sem slot no HUD; a lanterna fica sem coleta")
+		return
+	end
+	slot.tapped = function()
+		setHand(not inHand)
+	end
+	slot.held = drop
+
+	ItemHold.Bind(ITEM_ID, FlashlightConfig.HoldAnimationId, function()
+		setHand(false)
+	end)
+
+	pickup = ItemPickup.New(ITEM_ID, FlashlightConfig)
+	pickup.dress = dressPickup
+	pickup:Bind(collect)
+	pickup:Show()
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or not inHand then
+			return
+		end
+		if input.KeyCode == FlashlightConfig.PowerKey then
+			setPower(not lit)
+		end
+	end)
+
+	player.CharacterAdded:Connect(function(character)
+		if collected then
+			task.spawn(equip, character)
+		end
+	end)
+	player.CharacterRemoving:Connect(function()
+		equipped = false
+		inHand = false
+		lit = false
+		ItemHold.Release(ITEM_ID)
+		if slot then
+			slot:Hide()
+		end
+	end)
+end
+
+return FlashlightController

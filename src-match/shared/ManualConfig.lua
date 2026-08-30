@@ -1,17 +1,8 @@
--- Contrato do caderno: nomes dentro do Model, ponto de coleta, remotes e tempos, compartilhados
--- entre ManualService e os módulos de cliente. O caderno é visual e vive no cliente: cada um monta
--- a própria réplica a partir do template em ReplicatedStorage, e o exemplar parado na mesa também
--- é local. O servidor só guarda três fatos por jogador — pegou, equipado e na mão — para os outros
--- clientes saberem em quem desenhar.
+-- Contrato do caderno: nomes dentro do Model, ponto de coleta, pose e tempos. O que é comum a todo
+-- item equipável — parte do corpo, remotes, ordem no HUD, tempo do hold — está no ItemConfig.
 -- O ângulo empilhado é -180 (o sinal escolhe o lado da virada); página virada fica em 0. A
 -- posição do C1 é própria de cada motor — o código dirige só a rotação em Z.
 local ManualConfig = {}
-
-ManualConfig.ModelName = "Manual"
-ManualConfig.TemplateFolder = "Models" -- dentro de ReplicatedStorage.Client
-ManualConfig.JointName = "ManualJoint"
-ManualConfig.WaistPartName = "LowerTorso"
-ManualConfig.HandPartName = "LeftHand"
 
 -- Onde o caderno espera antes de alguém pegar, em coordenadas de mundo: posição em studs e
 -- ângulos em graus, ordem Y-X-Z igual ao campo Orientation do Studio. É o pivô do Model, então o
@@ -67,12 +58,6 @@ ManualConfig.CalibrateCamera = false
 -- Modo calibração da mão: readback da pose congelada, no cliente dono.
 ManualConfig.CalibrateHand = false
 
-ManualConfig.RemotesFolderName = "Remotes"
-ManualConfig.EquipRemote = "EquipManual" -- cliente -> servidor: peguei o meu na mesa
-ManualConfig.ToggleModeRemote = "ToggleManualMode" -- cliente -> servidor: pose desejada
-ManualConfig.UnequipRemote = "UnequipManual" -- cliente -> servidor
-ManualConfig.StateRemote = "ManualState" -- servidor -> todos; sem argumento, cliente pede o retrato
-
 -- Ordem de leitura; cada página tem motor "<nome>Motor" no Handle.
 ManualConfig.PageOrder = { "Record", "Roster", "Supply" }
 ManualConfig.EndpaperName = "Endpaper"
@@ -82,7 +67,6 @@ ManualConfig.FrontCoverMotorName = "FrontCoverMotor"
 ManualConfig.StackAngle = -180 -- graus; empilhada, não lida. Negativo levanta a página para o leitor
 ManualConfig.CoverOpenAngle = 180 -- graus; capa aberta para a esquerda. O sinal escolhe o lado
 
-ManualConfig.HoldTime = 3 -- segundos de botão segurado para devolver o caderno à mesa
 ManualConfig.OpenDelay = 0.5 -- capa abre depois deste atraso
 ManualConfig.RaycastRange = 20 -- studs; alcance do clique nas hitboxes
 
@@ -93,5 +77,6 @@ ManualConfig.CoverCloseTween = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.Ea
 ManualConfig.HoldAnimationId = "rbxassetid://112441741695315"
 ManualConfig.IconId = "rbxassetid://106157472383152"
 ManualConfig.HotKey = Enum.KeyCode.One -- alterna cintura/mão; rótulo no slot acompanha
+ManualConfig.KeyLabel = "1"
 
 return ManualConfig
