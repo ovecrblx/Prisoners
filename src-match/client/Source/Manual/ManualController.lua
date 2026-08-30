@@ -42,6 +42,7 @@ local equipped = false
 local inHand = false
 local currentPage = 1
 local hiddenAccessories = {}
+local hiddenHeads = {}
 
 -- Órbita viva da câmera: radianos e studs, semeada de ManualConfig e mantida entre aberturas
 -- para a calibração não se perder a cada fechada.
@@ -152,13 +153,37 @@ local function clearReadout()
 end
 
 local function tempFolder()
-	local folder = workspace:FindFirstChild("Temp")
+	local folder = workspace:FindFirstChild(ManualConfig.TempFolderName)
 	if not folder then
 		folder = Instance.new("Folder")
-		folder.Name = "Temp"
+		folder.Name = ManualConfig.TempFolderName
 		folder.Parent = workspace
 	end
 	return folder
+end
+
+-- A câmera de leitura fica perto da capa e a cabeça do rig entra no enquadramento. Some só nesta
+-- máquina: Transparency escrita no cliente não sobe para o servidor, e os outros continuam vendo o
+-- leitor inteiro. Transparency e não LocalTransparencyModifier — essa a doc marca como Hidden.
+-- Nome, e não o Head do Humanoid: o WrapTarget lá dentro também se chama Head, daí o IsA.
+local function hideHeads()
+	local character = player.Character
+	if not character or #hiddenHeads > 0 then
+		return
+	end
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name == ManualConfig.HeadPartName then
+			table.insert(hiddenHeads, { part = part, transparency = part.Transparency })
+			part.Transparency = 1
+		end
+	end
+end
+
+local function restoreHeads()
+	for _, entry in ipairs(hiddenHeads) do
+		entry.part.Transparency = entry.transparency
+	end
+	table.clear(hiddenHeads)
 end
 
 local function hideAccessories()
@@ -272,6 +297,7 @@ local function exitUse()
 
 	workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
 	restoreAccessories()
+	restoreHeads()
 
 	local playerGui = player:FindFirstChild("PlayerGui")
 	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")
@@ -299,6 +325,7 @@ local function enterUse()
 	if mainGui then
 		mainGui.Enabled = false
 	end
+	hideHeads()
 	hideAccessories()
 	bindHitboxes(character, view)
 	if use.token ~= token then

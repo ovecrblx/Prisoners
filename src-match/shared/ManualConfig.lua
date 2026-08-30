@@ -70,6 +70,11 @@ ManualConfig.CoverOpenAngle = 180 -- graus; capa aberta para a esquerda. O sinal
 ManualConfig.OpenDelay = 0.5 -- capa abre depois deste atraso
 ManualConfig.RaycastRange = 20 -- studs; alcance do clique nas hitboxes
 
+-- O que sai da frente enquanto o livro está aberto: a cabeça fica invisível e os acessórios vão
+-- para esta pasta. Nome da parte e nome da pasta, os dois no personagem de quem lê.
+ManualConfig.HeadPartName = "Head"
+ManualConfig.TempFolderName = "Temp"
+
 ManualConfig.PageTween = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 ManualConfig.CoverOpenTween = TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 ManualConfig.CoverCloseTween = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
