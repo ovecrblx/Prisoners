@@ -14,7 +14,7 @@ ClassConfig.List = {
 		Id = "detective_class",
 		Title = "Detective",
 		Icon = "rbxassetid://119583885663870",
-		Color = Color3.fromRGB(66, 133, 214),
+		Color = Color3.fromRGB(255, 179, 0),
 	},
 	{
 		Id = "guard_class",
