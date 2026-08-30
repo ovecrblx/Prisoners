@@ -44,6 +44,14 @@ FlashlightConfig.SkinFolderName = "Skins"
 FlashlightConfig.SkinOnName = "On"
 FlashlightConfig.SkinOffName = "Off"
 
+-- Chaves do SfxConfig. Coleta, equipar e guardar são lidas pela camada de item, então todo item que
+-- as preencher toca sozinho; as do interruptor são desta lanterna, que é quem tem luz.
+FlashlightConfig.PickupSfx = "FlashlightPickup"
+FlashlightConfig.EquipSfx = "FlashlightEquip"
+FlashlightConfig.StowSfx = "FlashlightStow"
+FlashlightConfig.PowerOnSfx = "FlashlightOn"
+FlashlightConfig.PowerOffSfx = "FlashlightOff"
+
 FlashlightConfig.HoldAnimationId = "rbxassetid://78800081500176"
 FlashlightConfig.IconId = "rbxassetid://120425963120676"
 FlashlightConfig.HotKey = Enum.KeyCode.Two -- alterna cintura/mão; rótulo no slot acompanha

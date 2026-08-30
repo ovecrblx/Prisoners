@@ -75,6 +75,11 @@ ManualConfig.RaycastRange = 20 -- studs; alcance do clique nas hitboxes
 ManualConfig.HeadPartName = "Head"
 ManualConfig.TempFolderName = "Temp"
 
+-- Chaves do SfxConfig. A da coleta é lida pela camada de item; a da folha é daqui, porque virar
+-- página é do caderno. Sem EquipSfx nem StowSfx: abrir e fechar o livro ainda não têm gravação.
+ManualConfig.PickupSfx = "ManualPickup"
+ManualConfig.PageSfx = "ManualPage"
+
 ManualConfig.PageTween = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 ManualConfig.CoverOpenTween = TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 ManualConfig.CoverCloseTween = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)

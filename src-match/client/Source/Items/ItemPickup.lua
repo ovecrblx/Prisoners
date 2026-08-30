@@ -8,6 +8,7 @@ ItemPickup.__index = ItemPickup
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ItemView = require(script.Parent:WaitForChild("ItemView"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
 local TaskConfig = require(Shared:WaitForChild("TaskConfig"))
@@ -122,7 +123,12 @@ function ItemPickup:Show()
 	-- prenderia cada uma onde o PivotTo a deixou, fora da junta.
 	handle.Anchored = true
 	clone:PivotTo(self:Pivot())
+	-- Som antes do handler: ele esconde o exemplar, e som preso numa peça destruída não chega a
+	-- soar. Sem peça de propósito — a coleta é local, e quem pegou está em cima dela.
 	buildPrompt(handle, function()
+		if self.config.PickupSfx then
+			Sfx.Play(self.config.PickupSfx)
+		end
 		if self.handler then
 			self.handler()
 		end

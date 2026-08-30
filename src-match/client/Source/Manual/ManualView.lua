@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local ItemView = require(script.Parent.Parent:WaitForChild("Items"):WaitForChild("ItemView"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local ManualConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ManualConfig"))
 
 ManualView.ItemId = "Manual"
@@ -97,10 +98,17 @@ local function setPage(view, index)
 	end
 end
 
+-- Clique na página já aberta não vira nada: sem a guarda o tween correria de novo para onde já
+-- está, mudo, e só o som entregaria a virada que não houve.
 function ManualView.SetPage(character, index)
 	local view = ItemView.Get(character, ManualView.ItemId)
-	if view then
-		setPage(view, index)
+	if not view or view.page == index then
+		return
+	end
+	view.page = index
+	setPage(view, index)
+	if ManualConfig.PageSfx then
+		Sfx.Play(ManualConfig.PageSfx, view.handle)
 	end
 end
 
@@ -110,11 +118,14 @@ function ManualView.Init()
 
 		dress = function(view)
 			view.pages, view.cover = ManualView.Dress(view.model, view.handle)
+			view.page = 1
 		end,
 
+		-- Fechar recolhe as folhas sem soar: quem guarda o caderno não está virando página.
 		pose = function(view, inHand)
 			setCover(view, inHand)
 			if not inHand then
+				view.page = 1
 				setPage(view, 1)
 			end
 		end,

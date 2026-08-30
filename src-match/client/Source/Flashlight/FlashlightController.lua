@@ -18,6 +18,7 @@ local ItemHold = require(Items:WaitForChild("ItemHold"))
 local ItemHud = require(Items:WaitForChild("ItemHud"))
 local ItemPickup = require(Items:WaitForChild("ItemPickup"))
 local ItemView = require(Items:WaitForChild("ItemView"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
 local FlashlightConfig = require(Shared:WaitForChild("FlashlightConfig"))
@@ -223,8 +224,11 @@ function FlashlightController.Init()
 			captureBeam(view)
 		end,
 
+		-- O gancho só roda na virada, e roda em toda réplica: o estalo sai do Handle de quem acendeu,
+		-- na máquina de quem olha, sem uma mensagem a mais na rede.
 		power = function(view, on)
 			applyPower(view.model, view.handle, on)
+			Sfx.Play(if on then FlashlightConfig.PowerOnSfx else FlashlightConfig.PowerOffSfx, view.handle)
 		end,
 
 		step = function(view, _, character)

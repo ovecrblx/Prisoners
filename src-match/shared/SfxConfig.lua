@@ -63,6 +63,21 @@ local SfxConfig = {
 
 	-- Prompt do cenário, no instante em que o jogador segura.
 	Prompt = { Id = 9119730203, Volume = 0.35, Speed = 1.35 },
+
+	-- Lanterna: interruptor e a troca cintura/mão, presos no Handle. Tocam em toda réplica, a do dono
+	-- e a dos outros, então quem passa perto ouve o clique de quem acendeu — sem nada a mais na rede.
+	FlashlightOn = { Id = 116902184912832, Volume = 0.5, Range = 30 },
+	FlashlightOff = { Id = 136626313475686, Volume = 0.5, Range = 30 },
+	FlashlightEquip = { Id = 85940558580144, Volume = 0.5, Range = 25 },
+	FlashlightStow = { Id = 104955812643358, Volume = 0.5, Range = 25 },
+
+	-- Folha virando, no Handle do caderno. Só o dono vira página — os outros nem desenham isso.
+	ManualPage = { Id = 128266063262896, Volume = 0.5, Range = 20 },
+
+	-- Coleta no cenário, uma chave por item. Sem peça, porque o exemplar some no mesmo quadro e
+	-- levaria o som junto; e o som é só de quem pegou, como a coleta inteira.
+	FlashlightPickup = { Id = 3834495137, Volume = 0.5 },
+	ManualPickup = { Id = 2886410788, Volume = 0.5 },
 }
 
 return SfxConfig
