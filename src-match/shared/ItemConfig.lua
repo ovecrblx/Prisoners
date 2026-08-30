@@ -13,6 +13,10 @@ ItemConfig.JointName = "ItemJoint"
 ItemConfig.WaistPartName = "LowerTorso"
 ItemConfig.HandPartName = "LeftHand"
 
+-- O braço que segura, da mão para cima. Em primeira pessoa o PlayerModule apaga o personagem
+-- inteiro; estes voltam junto com o item que está na mão.
+ItemConfig.HandChain = { "LeftHand", "LeftLowerArm", "LeftUpperArm" }
+
 -- A GUI publicada ainda se chama ManualGui, de quando o caderno era o único item; o Hud dentro
 -- dela é que carrega os slots de todos.
 ItemConfig.GuiName = "ManualGui"

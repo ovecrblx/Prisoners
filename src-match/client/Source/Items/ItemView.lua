@@ -20,6 +20,16 @@ local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild
 local TEMPLATE_TIMEOUT = 10 -- segundos esperando os templates aparecerem no boot
 local WAIST_TIMEOUT = 5 -- segundos esperando a parte da cintura no personagem
 
+-- Depois da câmera: o PlayerModule liga o apagamento de primeira pessoa em RenderPriority.Camera e,
+-- com a câmera colada no rosto, reescreve o quadro inteiro. Antes dele, a correção abaixo seria
+-- desfeita no mesmo quadro em que é escrita.
+local FIRST_PERSON_BIND = "ItemFirstPerson"
+local FIRST_PERSON_PRIORITY = Enum.RenderPriority.Camera.Value + 1
+
+-- As classes que o TransparencyController apaga, e por isso as que precisam ser trazidas de volta.
+-- LocalTransparencyModifier não é só de BasePart: o feixe da lanterna é um Beam e sumiria sozinho.
+local SHOWN_CLASSES = { "BasePart", "Decal", "Beam", "ParticleEmitter", "Trail" }
+
 local player = Players.LocalPlayer
 
 local specs = {}
@@ -105,6 +115,44 @@ local function settle(delta)
 	end
 end
 
+local function collectShown(model)
+	local shown = {}
+	for _, item in ipairs(model:GetDescendants()) do
+		for _, className in ipairs(SHOWN_CLASSES) do
+			if item:IsA(className) then
+				table.insert(shown, item)
+				break
+			end
+		end
+	end
+	return shown
+end
+
+-- Em primeira pessoa o PlayerModule apaga o personagem inteiro, e o item preso a ele vai junto. Aqui
+-- voltam o item que está na mão e o braço que o segura, e só eles: o resto do corpo continua sumindo.
+-- Escrever 0 fora da primeira pessoa não muda nada — é o valor que o próprio controlador põe lá.
+local function showInFirstPerson()
+	local character = player.Character
+	local byItem = character and views[character]
+	if not byItem then
+		return
+	end
+
+	for _, view in pairs(byItem) do
+		if view.inHand then
+			for _, item in ipairs(view.shown) do
+				item.LocalTransparencyModifier = 0
+			end
+			for _, partName in ipairs(ItemConfig.HandChain) do
+				local part = character:FindFirstChild(partName)
+				if part and part:IsA("BasePart") then
+					part.LocalTransparencyModifier = 0
+				end
+			end
+		end
+	end
+end
+
 local function build(character, itemId, waist)
 	local spec = specs[itemId]
 	local model = templates[itemId]:Clone()
@@ -134,6 +182,7 @@ local function build(character, itemId, waist)
 	if spec.dress then
 		spec.dress(view)
 	end
+	view.shown = collectShown(model)
 
 	local joint = Instance.new("Motor6D")
 	joint.Name = ItemConfig.JointName
@@ -211,6 +260,7 @@ function ItemView.Show(character, itemId)
 
 	if not settleLink then
 		settleLink = RunService.RenderStepped:Connect(settle)
+		RunService:BindToRenderStep(FIRST_PERSON_BIND, FIRST_PERSON_PRIORITY, showInFirstPerson)
 	end
 	return view
 end
@@ -235,6 +285,7 @@ function ItemView.Hide(character, itemId)
 	if next(views) == nil and settleLink then
 		settleLink:Disconnect()
 		settleLink = nil
+		RunService:UnbindFromRenderStep(FIRST_PERSON_BIND)
 	end
 end
 
