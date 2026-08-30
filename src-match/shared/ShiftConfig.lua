@@ -51,6 +51,18 @@ function ShiftConfig.Remaining(): number
 	return math.max(value - Workspace:GetServerTimeNow(), 0)
 end
 
+-- Fração do turno já corrida, 0 a 1, contando de trás para diante a partir do prazo. Sem prazo
+-- publicado é 0: relógio parado no começo do ciclo mente menos que relógio parado no fim. Turno
+-- cortado antes da hora não distorce o seguinte — o próximo prazo publicado reabre a contagem.
+function ShiftConfig.Progress(): number
+	local value = Workspace:GetAttribute(ShiftConfig.EndsAtAttribute)
+	if type(value) ~= "number" or ShiftConfig.Duration <= 0 then
+		return 0
+	end
+	local remaining = math.clamp(value - Workspace:GetServerTimeNow(), 0, ShiftConfig.Duration)
+	return 1 - remaining / ShiftConfig.Duration
+end
+
 -- Só vale de servidor: attribute escrito no cliente não replica de volta.
 function ShiftConfig.Publish(live: boolean, number: number, endsAt: number?)
 	Workspace:SetAttribute(ShiftConfig.LiveAttribute, live)
