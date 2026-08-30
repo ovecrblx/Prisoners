@@ -4,9 +4,8 @@
 -- mesmo quadro.
 -- A pose sai do C0 do Motor6D que prende o Handle ao corpo. Na mão o C0 é amostrado enquanto a
 -- animação de segurar levanta o braço, e congela em HandSettleTime; dali o item é rígido no espaço
--- da mão. Item com HandTracksFacing nunca congela: a mira dele é refeita todo quadro, para a
--- torção da animação de segurar não levar o item junto. Um único RenderStepped amostra todos os
--- itens de todos os personagens.
+-- da mão, e quem o move é o braço. Um único RenderStepped amostra todos os itens de todos os
+-- personagens.
 -- Cada item se registra com Define: `config` traz a pose, e `dress`/`pose` são os ganchos do que só
 -- aquele item sabe fazer com o próprio modelo.
 local ItemView = {}
@@ -15,6 +14,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local ItemAim = require(script.Parent:WaitForChild("ItemAim"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemConfig"))
 
 local TEMPLATE_TIMEOUT = 10 -- segundos esperando os templates aparecerem no boot
@@ -45,9 +46,8 @@ local function poseC0(character, part0, config)
 			* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
 	end
 
-	-- Item que mira não tem pose congelada para assar: a constante abaixo o prenderia à mão.
 	local baked = config.HandC0Angles
-	if not config.HandTracksFacing and config.HandC0Offset and baked then
+	if config.HandC0Offset and baked then
 		return CFrame.new(config.HandC0Offset)
 			* CFrame.fromOrientation(math.rad(baked.X), math.rad(baked.Y), math.rad(baked.Z))
 	end
@@ -80,11 +80,6 @@ local function settleView(character, view, delta)
 		return
 	end
 	view.joint.C0 = c0
-	-- Com HandTracksFacing o C0 nunca congela: a posição segue a mão e a mira segue o personagem,
-	-- todo quadro, então a torção da animação de segurar não leva o item junto.
-	if view.config.HandTracksFacing then
-		return
-	end
 	view.held += delta
 	if view.held < view.config.HandSettleTime then
 		return
@@ -96,6 +91,9 @@ local function settleView(character, view, delta)
 end
 
 local function settle(delta)
+	-- Antes das poses: o item pendura na mão, e a mão só está no lugar depois de o ombro inclinar.
+	ItemAim.Step(delta)
+
 	for character, byItem in pairs(views) do
 		for itemId, view in pairs(byItem) do
 			if character.Parent == nil or view.model.Parent == nil then
@@ -177,6 +175,7 @@ local function build(character, itemId, waist)
 		model = model,
 		handle = handle,
 		inHand = false,
+		on = false,
 		held = 0,
 	}
 	if spec.dress then
@@ -276,6 +275,10 @@ function ItemView.Hide(character, itemId)
 		views[character] = nil
 	end
 
+	if view.config.AimJoints then
+		ItemAim.Release(character)
+	end
+
 	local spec = specs[itemId]
 	if spec and spec.clear then
 		spec.clear(view)
@@ -311,6 +314,22 @@ function ItemView.SetPose(character, itemId, inHand)
 		return
 	end
 
+	-- Som só na virada, e nunca na primeira pose: o retrato dos outros repõe a pose a cada aviso e a
+	-- cada respawn, e réplica que nasce já com o item na mão não teve gesto para soar.
+	local key = if inHand then view.config.EquipSfx else view.config.StowSfx
+	if key and view.posed and view.inHand ~= inHand then
+		Sfx.Play(key, view.handle)
+	end
+	view.posed = true
+
+	if view.config.AimJoints and character == player.Character then
+		if inHand then
+			ItemAim.Bind(character, view.config, view.handle)
+		else
+			ItemAim.Release(character)
+		end
+	end
+
 	view.inHand = inHand
 	view.held = 0
 	view.handC0 = nil
@@ -319,14 +338,8 @@ function ItemView.SetPose(character, itemId, inHand)
 	if c0 then
 		view.joint.C0 = c0
 	end
-	-- Com HandC0 preenchido a pose já é final: nada a amostrar, nada a acomodar. Item que mira
-	-- nunca chega a esse ponto — para ele a amostragem é o estado permanente.
-	if
-		inHand
-		and not view.config.HandTracksFacing
-		and view.config.HandC0Offset
-		and view.config.HandC0Angles
-	then
+	-- Com HandC0 preenchido a pose já é final: nada a amostrar, nada a acomodar.
+	if inHand and view.config.HandC0Offset and view.config.HandC0Angles then
 		view.handC0 = view.joint.C0
 	end
 
@@ -338,12 +351,19 @@ end
 
 -- Estado ligado/desligado de item que tem um: o gancho é do item, porque só ele sabe o que acender
 -- dentro do próprio modelo. Item sem gancho ignora.
+-- Só a virada chama o gancho. O retrato dos outros jogadores chega inteiro a cada aviso e a cada
+-- respawn, então repintar o que já estava pintado é barato, mas tocar de novo o estalo do
+-- interruptor não é.
 function ItemView.SetPower(character, itemId, on)
 	local view = ItemView.Get(character, itemId)
 	local spec = specs[itemId]
-	if view and spec and spec.power then
-		spec.power(view, on)
+	-- Item sem estado nasce com `on` vazio no retrato dos outros; aqui vazio é desligado.
+	local wanted = on == true
+	if not (view and spec and spec.power) or view.on == wanted then
+		return
 	end
+	view.on = wanted
+	spec.power(view, wanted)
 end
 
 function ItemView.Init()

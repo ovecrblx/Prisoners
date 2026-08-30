@@ -11,21 +11,44 @@ FlashlightConfig.PickupAngles = Vector3.new(0, -135, 0)
 -- Mesma leitura de pose do caderno: offset em studs no espaço da parte do corpo, ângulos em graus
 -- na ordem Y-X-Z do campo Orientation do Studio. Na mão os ângulos são relativos à direção que o
 -- personagem encara, e valem até HandSettleTime, quando o C0 congela.
--- Estes valores são um chute inicial: a lanterna nunca foi calibrada em Play. Ligue CalibrateHand,
--- posicione, e cole aqui o par que o console imprimir.
 FlashlightConfig.WaistOffset = Vector3.new(1, 0, 0)
 FlashlightConfig.WaistAngles = Vector3.new(-70, 0, 0)
 FlashlightConfig.HandOffset = Vector3.new(-0.5, -0.25, -0.45)
 FlashlightConfig.HandAngles = Vector3.new(0, 0, 0)
-FlashlightConfig.HandSettleTime = 0.3 -- inerte com HandTracksFacing: nada congela
+FlashlightConfig.HandSettleTime = 0.3
 
--- A lanterna mira, não descansa: a pose na mão é refeita todo quadro em vez de congelar em
--- HandSettleTime, então a posição segue a mão e o facho segue o personagem. Congelada, ela
--- acompanharia a torção da animação de segurar e apontaria para os lados.
--- Ligado isto, HandAngles é o desvio a partir da direção que o personagem encara — zero é reto
--- para a frente — e HandC0Offset/HandC0Angles e CalibrateHand ficam sem efeito, porque não existe
--- pose congelada para assar.
-FlashlightConfig.HandTracksFacing = true
+-- Pontaria no corpo: juntas que giram para levar a lanterna até onde a câmera olha, e a fatia do
+-- caminho que cabe a cada uma.
+-- A ordem na cadeia manda: quem está acima gira o que está abaixo e a de baixo mede o que sobrou.
+-- Por isso a última fica em 1 — é ela que fecha a conta — e as de cima ficam em fração.
+-- Fatia acima de 1 numa junta do meio faz ela PASSAR do alvo de propósito, e a de baixo devolve o
+-- excesso. Foi isso que soltou o braço: só o ombro, ele girava o desvio da câmera menos o que a
+-- cintura levou, e um braço dobrado girando 19 graus lê como travado. Com 1.7 no ombro e o cotovelo
+-- fechando, o ombro gira 33 e o cotovelo dobra 13 no contrário — o braço articula, e o facho cai no
+-- mesmo lugar.
+-- Subir mais o ombro abre mais o braço e dobra mais o cotovelo: 2.2 pede 23 graus de cotovelo, e o
+-- LeftElbowBallSocket só tem 20 de cone. Daí para cima começa a bater no limite do rig.
+FlashlightConfig.AimJoints = {
+	Waist = 0.35,
+	LeftShoulder = 1.7,
+	LeftElbow = 1,
+}
+
+-- Segundos que as juntas ficam na pose da animação antes de a mira valer, para se ler ali para onde
+-- a lanterna aponta em repouso. É dessa leitura que sai a correção, e ela não é refeita depois: a
+-- junta chega ao comando por torque, então remedir daria o próprio comando pela metade, e a
+-- correção somando sobre si mesma faz o braço tremer.
+FlashlightConfig.AimSettleTime = 0.4
+
+-- Limites em graus, e eles só CORTAM: valor além do que a câmera alcança não estica nada. Em 90 nos
+-- quatro sentidos o corte praticamente não existe — o braço vai até onde a vista for. Para o braço
+-- andar MAIS que a câmera, o caminho é subir o fator de Pitch ou de Yaw, não abrir mais o limite.
+-- Yaw é a diferença entre a vista e o corpo, então o teto dele é o quanto o braço destorce do
+-- tronco antes de o personagem virar sozinho.
+FlashlightConfig.AimMinPitch = -90
+FlashlightConfig.AimMaxPitch = 90
+FlashlightConfig.AimMinYaw = -90
+FlashlightConfig.AimMaxYaw = 90
 
 FlashlightConfig.HandC0Offset = nil
 FlashlightConfig.HandC0Angles = nil
