@@ -7,11 +7,11 @@ local ClockConfig = {}
 -- Marcas do ciclo, na ordem em que passam. Hora em 24h, e hora menor ou igual à anterior é do dia
 -- seguinte — 22, 23, 1, 3, 6 é uma noite só. `Color` vai para Background_01.BackgroundColor3.
 ClockConfig.Marks = {
-	{ Hour = 22, Color = Color3.fromRGB(60, 96, 168) },
-	{ Hour = 23, Color = Color3.fromRGB(40, 62, 130) },
-	{ Hour = 1, Color = Color3.fromRGB(22, 32, 82) },
-	{ Hour = 3, Color = Color3.fromRGB(46, 40, 96) },
-	{ Hour = 6, Color = Color3.fromRGB(226, 146, 92) },
+	{ Hour = 22, Color = Color3.fromRGB(116, 3, 255) },
+	{ Hour = 23, Color = Color3.fromRGB(107, 30, 171) },
+	{ Hour = 1, Color = Color3.fromRGB(49, 57, 170) },
+	{ Hour = 3, Color = Color3.fromRGB(66, 98, 184) },
+	{ Hour = 6, Color = Color3.fromRGB(57, 163, 255) },
 }
 
 -- Hora em que o ciclo termina, junto com o turno. Uma hora depois da última marca de propósito:
