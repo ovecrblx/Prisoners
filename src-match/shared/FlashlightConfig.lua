@@ -13,8 +13,8 @@ FlashlightConfig.PickupAngles = Vector3.new(0, -135, 0)
 -- personagem encara, e valem até HandSettleTime, quando o C0 congela.
 FlashlightConfig.WaistOffset = Vector3.new(1, 0, 0)
 FlashlightConfig.WaistAngles = Vector3.new(-70, 0, 0)
-FlashlightConfig.HandOffset = Vector3.new(0.25, -0.15, -0.6)
-FlashlightConfig.HandAngles = Vector3.new(-24, 5, 0)
+FlashlightConfig.HandOffset = Vector3.new(-0.2, -0.2, -0.25)
+FlashlightConfig.HandAngles = Vector3.new(-12, 5, 0)
 FlashlightConfig.HandSettleTime = 0.3
 
 -- Pontaria: um IKControl puxa a mão até um alvo no rumo do mouse, e o solver faz o braço. A cadeia é
