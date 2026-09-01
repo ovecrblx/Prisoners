@@ -6,6 +6,9 @@
 -- Os limites de junta do rig ficam como vieram: o que segura a mira é o campo à frente do corpo, em
 -- AimFieldDistance e AimFieldRadius, para o braço não ir atrás do ponteiro quando ele passa para as
 -- costas.
+-- Entra e sai por rampa de peso, em AimBlendTime: sacar e guardar caem no meio da animação de
+-- segurar, e peso cheio no primeiro quadro faria o braço saltar para o rumo do mouse. Release só
+-- pede a saída; quem apaga o controle é o passo, ao chegar em zero. Clear apaga na hora.
 -- Só de quem mira: instância criada no cliente não replica, então os outros veem o braço da
 -- animação. Réplica de outro jogador não tem ponteiro para ler, e nem tenta.
 local ItemAim = {}
@@ -28,7 +31,14 @@ rayParams.FilterType = Enum.RaycastFilterType.Exclude
 rayParams.IgnoreWater = true
 
 function ItemAim.Bind(character, config)
-	if bound[character] or character ~= player.Character then
+	if character ~= player.Character then
+		return
+	end
+	-- Sacar no meio da saída reaproveita o controle: a rampa vira e sobe do peso em que estava.
+	local live = bound[character]
+	if live then
+		live.wanted = config.AimWeight
+		live.releasing = false
 		return
 	end
 
@@ -53,7 +63,7 @@ function ItemAim.Bind(character, config)
 	control.ChainRoot = chainRoot
 	control.EndEffector = effector
 	control.Target = mark
-	control.Weight = config.AimWeight
+	control.Weight = 0
 	control.SmoothTime = config.AimSmoothTime
 	control.Parent = humanoid
 
@@ -63,10 +73,20 @@ function ItemAim.Bind(character, config)
 		mark = mark,
 		anchor = anchor,
 		reach = (effector.Position - anchor.Position).Magnitude,
+		weight = 0,
+		wanted = config.AimWeight,
 	}
 end
 
 function ItemAim.Release(character)
+	local state = bound[character]
+	if state then
+		state.wanted = 0
+		state.releasing = true
+	end
+end
+
+function ItemAim.Clear(character)
 	local state = bound[character]
 	if not state then
 		return
@@ -134,6 +154,19 @@ end
 -- corre entre dois rumos que já passaram pelo cone, então nunca sai dele no meio do caminho.
 -- A âncora é peça que o solver NÃO move: medida de dentro da cadeia, o alvo andaria junto com o
 -- braço que o persegue.
+-- A rampa é linear no tempo, não exponencial: exponencial nunca chega a zero, e o controle só some
+-- quando chega.
+local function rampWeight(state, delta)
+	local blend = state.config.AimBlendTime
+	local step = if blend and blend > 0 then delta / blend else 1
+	if state.weight < state.wanted then
+		state.weight = math.min(state.wanted, state.weight + step)
+	elseif state.weight > state.wanted then
+		state.weight = math.max(state.wanted, state.weight - step)
+	end
+	state.control.Weight = state.weight
+end
+
 function ItemAim.Step(delta)
 	for character, state in pairs(bound) do
 		local root = character:FindFirstChild(ROOT_PART_NAME)
@@ -142,9 +175,10 @@ function ItemAim.Step(delta)
 			or root == nil
 			or state.anchor.Parent == nil
 			or state.control.Parent == nil
-		if stale then
-			ItemAim.Release(character)
+		if stale or (state.releasing and state.weight <= 0) then
+			ItemAim.Clear(character)
 		else
+			rampWeight(state, delta)
 			local wanted = aimDirection(state, character, root)
 			if wanted then
 				local inBody = root.CFrame:VectorToObjectSpace(wanted)

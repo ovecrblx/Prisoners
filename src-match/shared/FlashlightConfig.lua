@@ -41,6 +41,11 @@ FlashlightConfig.AimFieldRadius = 6
 -- Quanto da pose vem da mira, de 0 a 1: abaixo de 1 a animação de segurar volta a pesar.
 FlashlightConfig.AimWeight = 1
 
+-- Segundos que o peso leva de 0 a AimWeight ao sacar, e de volta a 0 ao guardar. É o que faz a mira
+-- ENTRAR junto com a animação de segurar em vez de depois dela: sem rampa o braço salta para o rumo
+-- do mouse no quadro em que o controle nasce. Perto do fade da animação, que é de 0.1.
+FlashlightConfig.AimBlendTime = 0.25
+
 -- Segundos que o efetor leva para alcançar o alvo, por mola criticamente amortecida do solver.
 FlashlightConfig.AimSmoothTime = 0.03
 

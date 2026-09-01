@@ -6,6 +6,9 @@
 -- animação de segurar levanta o braço, e congela em HandSettleTime; dali o item é rígido no espaço
 -- da mão, e quem o move é o braço. Um único PreRender amostra todos os itens de todos os
 -- personagens.
+-- Essa amostragem é uma vez por item por sessão: o valor que ela congela é da animação de segurar,
+-- a mesma toda vez, e fica guardado. Sacar de novo entra com a pose pronta, e é o que deixa a mira
+-- pegar o braço no primeiro quadro em vez de esperar HandSettleTime para começar a mexer.
 -- Cada item se registra com Define: `config` traz a pose, e `dress`/`pose` são os ganchos do que só
 -- aquele item sabe fazer com o próprio modelo.
 local ItemView = {}
@@ -38,6 +41,10 @@ local templates = {}
 local views = {}
 local pending = {}
 local settleLink
+
+-- Pose da mão já travada, por item. Só do personagem do dono: a réplica dos outros pode nascer com a
+-- animação de segurar em qualquer ponto do loop, e congelaria um valor de fase errada.
+local handPose = {}
 
 local function poseC0(character, part0, config)
 	if part0.Name ~= ItemConfig.HandPartName then
@@ -85,8 +92,11 @@ local function settleView(character, view, delta)
 		return
 	end
 	view.handC0 = c0
-	if view.config.CalibrateHand and character == player.Character then
-		readback(view.itemId, view.joint)
+	if character == player.Character then
+		handPose[view.itemId] = c0
+		if view.config.CalibrateHand then
+			readback(view.itemId, view.joint)
+		end
 	end
 end
 
@@ -102,8 +112,10 @@ local function settle(delta)
 				if view.inHand and not view.handC0 then
 					settleView(character, view, delta)
 				elseif view.inHand and view.config.AimChainRoot and character == player.Character then
-					-- Só depois de a pose travar: a amostragem do C0 lê o CFrame da mão, e a mira
-					-- movendo o braço nesses primeiros quadros congelaria a lanterna fora do lugar.
+					-- Nunca durante a amostragem: ela lê o CFrame da mão, e a mira movendo o braço
+					-- nesses quadros congelaria a lanterna fora do lugar. Com a pose já travada, é
+					-- no primeiro quadro. Chamar todo quadro é de graça e é o que refaz a mira se
+					-- ela tiver saído.
 					ItemAim.Bind(character, view.config)
 				end
 				-- Roda em toda réplica, a do dono e a dos outros: efeito que depende do mundo em
@@ -307,8 +319,10 @@ function ItemView.Hide(character, itemId)
 		link:Disconnect()
 	end
 
+	-- Aqui é corte, não saída por rampa: some o último item e o passo que terminaria a rampa para
+	-- de rodar, deixando um IKControl de peso cheio pendurado no Humanoid.
 	if view.config.AimChainRoot then
-		ItemAim.Release(character)
+		ItemAim.Clear(character)
 	end
 
 	local spec = specs[itemId]
@@ -354,7 +368,7 @@ function ItemView.SetPose(character, itemId, inHand)
 	end
 	view.posed = true
 
-	-- Guardar solta o braço na hora; sacar liga a mira só quando a pose travar, lá no settle.
+	-- Guardar devolve o braço à animação por rampa, em AimBlendTime; sacar liga a mira lá no settle.
 	if not inHand and view.config.AimChainRoot then
 		ItemAim.Release(character)
 	end
@@ -363,12 +377,14 @@ function ItemView.SetPose(character, itemId, inHand)
 	view.held = 0
 	view.handC0 = nil
 	view.joint.Part0 = part0
-	local c0 = poseC0(character, part0, view.config)
+	-- Pose da mão já conhecida — do config ou da amostragem anterior — é final: nada a amostrar,
+	-- nada a acomodar, e a mira entra no mesmo quadro.
+	local known = inHand and handPose[itemId]
+	local c0 = known or poseC0(character, part0, view.config)
 	if c0 then
 		view.joint.C0 = c0
 	end
-	-- Com HandC0 preenchido a pose já é final: nada a amostrar, nada a acomodar.
-	if inHand and view.config.HandC0Offset and view.config.HandC0Angles then
+	if inHand and (known or (view.config.HandC0Offset and view.config.HandC0Angles)) then
 		view.handC0 = view.joint.C0
 	end
 
