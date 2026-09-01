@@ -13,42 +13,43 @@ FlashlightConfig.PickupAngles = Vector3.new(0, -135, 0)
 -- personagem encara, e valem até HandSettleTime, quando o C0 congela.
 FlashlightConfig.WaistOffset = Vector3.new(1, 0, 0)
 FlashlightConfig.WaistAngles = Vector3.new(-70, 0, 0)
-FlashlightConfig.HandOffset = Vector3.new(-0.5, -0.25, -0.45)
-FlashlightConfig.HandAngles = Vector3.new(0, 0, 0)
+FlashlightConfig.HandOffset = Vector3.new(0.25, -0.15, -0.6)
+FlashlightConfig.HandAngles = Vector3.new(-24, 5, 0)
 FlashlightConfig.HandSettleTime = 0.3
 
--- Pontaria no corpo: juntas que giram para levar a lanterna até onde a câmera olha, e a fatia do
--- caminho que cabe a cada uma.
--- A ordem na cadeia manda: quem está acima gira o que está abaixo e a de baixo mede o que sobrou.
--- Por isso a última fica em 1 — é ela que fecha a conta — e as de cima ficam em fração.
--- Fatia acima de 1 numa junta do meio faz ela PASSAR do alvo de propósito, e a de baixo devolve o
--- excesso. Foi isso que soltou o braço: só o ombro, ele girava o desvio da câmera menos o que a
--- cintura levou, e um braço dobrado girando 19 graus lê como travado. Com 1.7 no ombro e o cotovelo
--- fechando, o ombro gira 33 e o cotovelo dobra 13 no contrário — o braço articula, e o facho cai no
--- mesmo lugar.
--- Subir mais o ombro abre mais o braço e dobra mais o cotovelo: 2.2 pede 23 graus de cotovelo, e o
--- LeftElbowBallSocket só tem 20 de cone. Daí para cima começa a bater no limite do rig.
-FlashlightConfig.AimJoints = {
-	Waist = 0.35,
-	LeftShoulder = 1.7,
-	LeftElbow = 1,
-}
+-- Pontaria: um IKControl puxa a mão até um alvo no rumo do mouse, e o solver faz o braço. A cadeia é
+-- do ChainRoot ao EndEffector, os dois inclusive, e a lanterna fica fora dela: o que ela faz na mão
+-- continua sendo HandOffset e HandAngles.
+FlashlightConfig.AimChainRoot = "LeftUpperArm"
+FlashlightConfig.AimEndEffector = "LeftHand"
+FlashlightConfig.AimType = Enum.IKControlType.Position
 
--- Segundos que as juntas ficam na pose da animação antes de a mira valer, para se ler ali para onde
--- a lanterna aponta em repouso. É dessa leitura que sai a correção, e ela não é refeita depois: a
--- junta chega ao comando por torque, então remedir daria o próprio comando pela metade, e a
--- correção somando sobre si mesma faz o braço tremer.
-FlashlightConfig.AimSettleTime = 0.4
+-- De onde o rumo do mouse é medido, e a que distância o alvo fica: a do efetor em repouso até aqui.
+-- Tem de ser peça que o solver NÃO move — medida de dentro da cadeia, o alvo andaria junto com o
+-- braço que o persegue, e o braço treme atrás de si mesmo.
+FlashlightConfig.AimOriginPart = "UpperTorso"
 
--- Limites em graus, e eles só CORTAM: valor além do que a câmera alcança não estica nada. Em 90 nos
--- quatro sentidos o corte praticamente não existe — o braço vai até onde a vista for. Para o braço
--- andar MAIS que a câmera, o caminho é subir o fator de Pitch ou de Yaw, não abrir mais o limite.
--- Yaw é a diferença entre a vista e o corpo, então o teto dele é o quanto o braço destorce do
--- tronco antes de o personagem virar sozinho.
-FlashlightConfig.AimMinPitch = -90
-FlashlightConfig.AimMaxPitch = 90
-FlashlightConfig.AimMinYaw = -90
-FlashlightConfig.AimMaxYaw = 90
+-- O campo de mira: um círculo a AimFieldDistance studs à frente do corpo, com AimFieldRadius de
+-- raio. É a janela em que o mouse manda — rumo que cai fora volta para a borda dela, então a mira
+-- satura na lateral em vez de ir para as costas.
+-- Os dois juntos dão a abertura: atan(raio / distância). 6 e 8 dão cerca de 37 graus de meia-
+-- abertura. Aproximar o círculo ou abrir o raio solta a mira; afastar ou apertar o raio fecha.
+-- Medido em espaço de corpo, então virar o personagem leva a janela junto.
+FlashlightConfig.AimFieldDistance = 8
+FlashlightConfig.AimFieldRadius = 6
+
+-- Quanto da pose vem da mira, de 0 a 1: abaixo de 1 a animação de segurar volta a pesar.
+FlashlightConfig.AimWeight = 1
+
+-- Segundos que o efetor leva para alcançar o alvo, por mola criticamente amortecida do solver.
+FlashlightConfig.AimSmoothTime = 0.03
+
+-- Segundos para o alvo da mira fechar a maior parte da distância até o rumo do mouse. É o quanto
+-- ela PERSEGUE em vez de colar: em 0 ela cola, e todo tranco de ponteiro vira tranco de braço. O
+-- arrasto corre no espaço do corpo, então virar o personagem leva a mira junto em vez de deixá-la
+-- para trás.
+-- Some com o AimSmoothTime: este atrasa o alvo, aquele atrasa o solver atrás do alvo.
+FlashlightConfig.AimFollowTime = 0.18
 
 FlashlightConfig.HandC0Offset = nil
 FlashlightConfig.HandC0Angles = nil
@@ -62,6 +63,10 @@ FlashlightConfig.CalibrateHand = false
 -- mesmo alcance, e divergir deixa a luz acesa onde o feixe já acabou. O comprimento autorado das
 -- attachments não manda: o feixe vai até aqui, ou até a primeira superfície antes disso.
 FlashlightConfig.BeamRange = 24
+
+-- Alcance em studs do raio que sai do ponteiro, e só dele: é o quanto se procura superfície para
+-- saber a DIREÇÃO da mira. A distância da ponta continua sendo BeamRange.
+FlashlightConfig.MouseRange = 500
 
 FlashlightConfig.SkinFolderName = "Skins"
 FlashlightConfig.SkinOnName = "On"

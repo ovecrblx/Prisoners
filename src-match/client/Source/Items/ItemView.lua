@@ -4,7 +4,7 @@
 -- mesmo quadro.
 -- A pose sai do C0 do Motor6D que prende o Handle ao corpo. Na mão o C0 é amostrado enquanto a
 -- animação de segurar levanta o braço, e congela em HandSettleTime; dali o item é rígido no espaço
--- da mão, e quem o move é o braço. Um único RenderStepped amostra todos os itens de todos os
+-- da mão, e quem o move é o braço. Um único PreRender amostra todos os itens de todos os
 -- personagens.
 -- Cada item se registra com Define: `config` traz a pose, e `dress`/`pose` são os ganchos do que só
 -- aquele item sabe fazer com o próprio modelo.
@@ -14,8 +14,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local ItemAim = require(script.Parent:WaitForChild("ItemAim"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
+local ItemAim = require(script.Parent:WaitForChild("ItemAim"))
 local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemConfig"))
 
 local TEMPLATE_TIMEOUT = 10 -- segundos esperando os templates aparecerem no boot
@@ -91,7 +91,7 @@ local function settleView(character, view, delta)
 end
 
 local function settle(delta)
-	-- Antes das poses: o item pendura na mão, e a mão só está no lugar depois de o ombro inclinar.
+	-- Move o alvo da mira; quem gira o braço é o solver do IKControl, no passo de animação.
 	ItemAim.Step(delta)
 
 	for character, byItem in pairs(views) do
@@ -101,6 +101,10 @@ local function settle(delta)
 			else
 				if view.inHand and not view.handC0 then
 					settleView(character, view, delta)
+				elseif view.inHand and view.config.AimChainRoot and character == player.Character then
+					-- Só depois de a pose travar: a amostragem do C0 lê o CFrame da mão, e a mira
+					-- movendo o braço nesses primeiros quadros congelaria a lanterna fora do lugar.
+					ItemAim.Bind(character, view.config)
 				end
 				-- Roda em toda réplica, a do dono e a dos outros: efeito que depende do mundo em
 				-- volta tem que ser refeito na máquina de quem olha, não mandado pela rede.
@@ -258,7 +262,7 @@ function ItemView.Show(character, itemId)
 	byItem[itemId] = view
 
 	if not settleLink then
-		settleLink = RunService.RenderStepped:Connect(settle)
+		settleLink = RunService.PreRender:Connect(settle)
 		RunService:BindToRenderStep(FIRST_PERSON_BIND, FIRST_PERSON_PRIORITY, showInFirstPerson)
 	end
 	return view
@@ -275,7 +279,7 @@ function ItemView.Hide(character, itemId)
 		views[character] = nil
 	end
 
-	if view.config.AimJoints then
+	if view.config.AimChainRoot then
 		ItemAim.Release(character)
 	end
 
@@ -322,12 +326,9 @@ function ItemView.SetPose(character, itemId, inHand)
 	end
 	view.posed = true
 
-	if view.config.AimJoints and character == player.Character then
-		if inHand then
-			ItemAim.Bind(character, view.config, view.handle)
-		else
-			ItemAim.Release(character)
-		end
+	-- Guardar solta o braço na hora; sacar liga a mira só quando a pose travar, lá no settle.
+	if not inHand and view.config.AimChainRoot then
+		ItemAim.Release(character)
 	end
 
 	view.inHand = inHand
