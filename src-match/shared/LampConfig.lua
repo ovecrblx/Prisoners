@@ -25,6 +25,27 @@ LampConfig.BulbOnScale = 1
 LampConfig.BulbOffScale = 0.55
 LampConfig.BulbTime = 0.12
 
+-- Névoa do Atmosphere puxada pelas luzes de sala: 0 com todos os PointLight de `Light_Part_`
+-- acesos, HazeMax com todos apagados, e proporcional no meio — cada um vale a mesma fatia. Segundos
+-- do percurso até o valor novo.
+-- O Haze é o que dá o que espalhar ao Glare do Atmosphere: com ele em 0, o Glare fica inerte.
+-- HazeTime é o percurso inteiro, de 0 a HazeMax: névoa é ar mudando, não interruptor, e chegar
+-- junto com o clique entrega o truque. Tecla apertada no meio do caminho cancela o percurso e sai
+-- de onde ele estava, então o tempo real é sempre menor que este.
+LampConfig.HazeMax = 1.5
+LampConfig.HazeTime = 10
+
+-- Ambient do Lighting na mesma conta e no mesmo tempo, mas ao contrário: acende, clareia. A cor não
+-- muda, só quanto ela clareia — é fração da cor que o place tem hoje, e os três canais andam juntos.
+-- AmbientOnScale é o teto, com todos os PointLight acesos: 0.7 da cor de hoje passa a valer por
+-- cheio. AmbientOffScale é o piso, com todos apagados.
+-- Trocar os dois por 1 e 0.7 inverte a leitura: hoje vira o teto, e o apagado só desce até 0.7.
+-- Tempo próprio, e curto: o ambiente é a sala respondendo à tecla, e atrasar isso faria o clique
+-- parecer sem efeito. A névoa é que se arrasta.
+LampConfig.AmbientOnScale = 0.7
+LampConfig.AmbientOffScale = 0
+LampConfig.AmbientTime = 0.6
+
 -- Giro da tecla em graus, somado à pose em que ela foi publicada, em torno do eixo local do próprio
 -- Part: 0 é a pose do cenário. Orientação absoluta programada aqui reconstruía a rotação inteira e
 -- desalinhava a tecla com a placa.

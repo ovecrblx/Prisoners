@@ -4,7 +4,10 @@
 -- Duas peças por grupo, com papéis diferentes: o bulbo do `Lamp_` tem cor a escurecer, e o
 -- `Light_Part_` é só a luz solta da sala — nele acende e apaga o que está dentro.
 -- A cor é do cenário, não daqui: cada bulbo guarda a que tinha ao ser registrado, e acender e
--- apagar só multiplicam essa cor pela fração do estado.
+-- apagar só multiplicam essa cor pela fração do estado. Vale igual para o Ambient do Lighting.
+-- Névoa e ambiente são do prédio, não de um grupo: saem da fração de PointLight apagados, e é a
+-- mesma conta para os dois — apagar levanta o Haze do Atmosphere e escurece o Ambient.
+local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
@@ -18,9 +21,14 @@ local FOLDER_WAIT = 20
 
 local BULB_TWEEN = TweenInfo.new(LampConfig.BulbTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local BUTTON_TWEEN = TweenInfo.new(LampConfig.ButtonTime, LampConfig.ButtonStyle, LampConfig.ButtonDirection)
+local HAZE_TWEEN = TweenInfo.new(LampConfig.HazeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local AMBIENT_TWEEN = TweenInfo.new(LampConfig.AmbientTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local groups = {}
 local watched = {}
+local hazeTween
+local ambientTween
+local ambientBase
 
 local function group(suffix)
 	local entry = groups[suffix]
@@ -33,18 +41,22 @@ local function group(suffix)
 	return entry
 end
 
+-- Clareia ou escurece sem trocar a cor: os três canais andam juntos, então matiz e saturação ficam.
+local function shade(color, scale)
+	return Color3.new(
+		math.min(color.R * scale, 1),
+		math.min(color.G * scale, 1),
+		math.min(color.B * scale, 1)
+	)
+end
+
 -- O Beam, as luzes e a poeira são lidos na hora: o streaming pode devolvê-los depois do bulbo, e uma
 -- lista guardada no registro ficaria velha.
 -- Apagar corta o que ia nascer; partícula já no ar vive o próprio Lifetime, e some junto com o
 -- facho em vez de sumir com ele.
 local function applyBulb(bulb, on, animate)
 	local scale = if on then LampConfig.BulbOnScale else LampConfig.BulbOffScale
-	local base = bulb.base
-	local color = Color3.new(
-		math.min(base.R * scale, 1),
-		math.min(base.G * scale, 1),
-		math.min(base.B * scale, 1)
-	)
+	local color = shade(bulb.base, scale)
 
 	if animate then
 		TweenService:Create(bulb.part, BULB_TWEEN, { Color = color }):Play()
@@ -66,6 +78,66 @@ local function applyLight(part, on)
 		if item:IsA("Beam") or item:IsA("Light") or item:IsA("ParticleEmitter") then
 			item.Enabled = on
 		end
+	end
+end
+
+-- Quanto do prédio está no escuro, de 0 a 1: cada PointLight de `Light_Part_` vale a mesma fatia.
+-- Contado no Enabled das peças, não no estado dos grupos: assim o que o streaming ainda não trouxe
+-- simplesmente não vota, em vez de contar como aceso.
+local function darkRatio()
+	local total, dark = 0, 0
+
+	for _, entry in pairs(groups) do
+		for _, part in ipairs(entry.lights) do
+			for _, item in ipairs(part:GetChildren()) do
+				if item:IsA("PointLight") then
+					total += 1
+					if not item.Enabled then
+						dark += 1
+					end
+				end
+			end
+		end
+	end
+
+	return if total > 0 then dark / total else 0
+end
+
+-- Névoa e ambiente saem da mesma fração e andam em sentidos opostos: apagar as salas levanta o Haze
+-- e escurece o Ambient. Nada disto é de um grupo — é do prédio inteiro.
+-- O Ambient de partida é lido na primeira passagem, antes de qualquer escrita nossa: é dele que sai
+-- o teto, e reler depois pegaria a cor já escurecida.
+-- O percurso anterior é cancelado: dois vivos na mesma propriedade brigam pelo valor.
+local function refreshAmbience(animate)
+	local ratio = darkRatio()
+	ambientBase = ambientBase or Lighting.Ambient
+
+	local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+	local haze = LampConfig.HazeMax * ratio
+	local lift = LampConfig.AmbientOnScale + (LampConfig.AmbientOffScale - LampConfig.AmbientOnScale) * ratio
+	local ambient = shade(ambientBase, lift)
+
+	if hazeTween then
+		hazeTween:Cancel()
+		hazeTween = nil
+	end
+	if ambientTween then
+		ambientTween:Cancel()
+		ambientTween = nil
+	end
+
+	if animate then
+		if atmosphere then
+			hazeTween = TweenService:Create(atmosphere, HAZE_TWEEN, { Haze = haze })
+			hazeTween:Play()
+		end
+		ambientTween = TweenService:Create(Lighting, AMBIENT_TWEEN, { Ambient = ambient })
+		ambientTween:Play()
+	else
+		if atmosphere then
+			atmosphere.Haze = haze
+		end
+		Lighting.Ambient = ambient
 	end
 end
 
@@ -99,6 +171,8 @@ local function setState(suffix, on, animate)
 			Sfx.Play(if on then "SwitchOn" else "SwitchOff", button.part)
 		end
 	end
+
+	refreshAmbience(animate)
 end
 
 -- Atributo ainda não publicado conta como o estado de partida: o cliente pode registrar a tecla
@@ -155,6 +229,8 @@ local function registerLight(part)
 
 	table.insert(entry.lights, part)
 	applyLight(part, entry.on)
+	-- Peça nova muda o total da conta, e ela pode chegar sem tecla nenhuma trocar de estado.
+	refreshAmbience(false)
 end
 
 -- As duas poses saem do pivô de repouso, medido uma vez, e o giro é somado a ele. Medir de novo a
