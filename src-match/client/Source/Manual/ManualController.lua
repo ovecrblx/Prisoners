@@ -22,6 +22,7 @@ local ItemHud = require(Items:WaitForChild("ItemHud"))
 local ItemPickup = require(Items:WaitForChild("ItemPickup"))
 local ItemView = require(Items:WaitForChild("ItemView"))
 local ManualView = require(script.Parent:WaitForChild("ManualView"))
+local MobileHud = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MobileHud"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
 local ManualConfig = require(Shared:WaitForChild("ManualConfig"))
@@ -35,6 +36,8 @@ local player = Players.LocalPlayer
 local actionRemote
 local pickup
 local slot
+local touchPanel
+local touchPager
 
 local use = { links = {}, hitboxes = {}, actions = {}, active = false, token = 0 }
 local collected = false
@@ -215,6 +218,21 @@ local function turnTo(character, index)
 	ManualView.SetPage(character, index)
 end
 
+-- Setas do toque. Passo preso nas pontas, e não circular: no fim do caderno a seta não faz nada, em
+-- vez de saltar para a primeira folha. Clicar na própria página continua valendo — isto é o atalho
+-- de quem não tem ponteiro.
+local function stepPage(delta)
+	local character = player.Character
+	if not (use.active and character) then
+		return
+	end
+
+	local index = math.clamp(currentPage + delta, 1, #ManualConfig.PageOrder)
+	if index ~= currentPage then
+		turnTo(character, index)
+	end
+end
+
 local function bindHitboxes(character, view)
 	table.clear(use.hitboxes)
 	table.clear(use.actions)
@@ -268,6 +286,11 @@ end
 local function exitUse()
 	use.token += 1
 	currentPage = 1
+	-- Antes da saída curta: livro fechado por outro caminho também tira as setas da tela.
+	if touchPager then
+		touchPager.next:Hide()
+		touchPager.previous:Hide()
+	end
 	if not use.active then
 		return
 	end
@@ -317,6 +340,11 @@ local function enterUse()
 		return
 	end
 	use.active = true
+
+	if touchPager then
+		touchPager.next:Show()
+		touchPager.previous:Show()
+	end
 
 	ItemHold.Claim(ITEM_ID)
 
@@ -490,6 +518,9 @@ function setHand(value)
 	if character then
 		ItemView.SetPose(character, ITEM_ID, value)
 	end
+	if touchPanel then
+		touchPanel:SetOn(value)
+	end
 	if value then
 		enterUse()
 	else
@@ -502,6 +533,9 @@ local function release()
 	exitUse()
 	if slot then
 		slot:Hide()
+	end
+	if touchPanel then
+		touchPanel:Hide()
 	end
 end
 
@@ -518,6 +552,11 @@ local function equip(character)
 	ItemView.SetPose(character, ITEM_ID, false)
 	if slot then
 		slot:Show()
+	end
+	-- O painel do caderno é da POSSE, não da mão: é por ele que o toque abre o livro guardado.
+	if touchPanel then
+		touchPanel:SetOn(false)
+		touchPanel:Show()
 	end
 	task.spawn(ItemHold.Preload, ITEM_ID, character)
 end
@@ -565,6 +604,21 @@ function ManualController.Start()
 		setHand(not inHand)
 	end
 	slot.held = drop
+
+	-- Vai o valor absoluto que o botão pede: On abre o caderno, Off guarda. As setas são painel sem
+	-- par — o Frame inteiro é um botão só — e só existem com o livro aberto.
+	touchPanel = MobileHud.Panel(ITEM_ID, setHand)
+	touchPanel:Hide()
+	touchPager = {
+		next = MobileHud.Panel("Right", nil, function()
+			stepPage(1)
+		end),
+		previous = MobileHud.Panel("Left", nil, function()
+			stepPage(-1)
+		end),
+	}
+	touchPager.next:Hide()
+	touchPager.previous:Hide()
 
 	ItemHold.Bind(ITEM_ID, ManualConfig.HoldAnimationId, function()
 		setHand(false)

@@ -18,6 +18,7 @@ local ItemHold = require(Items:WaitForChild("ItemHold"))
 local ItemHud = require(Items:WaitForChild("ItemHud"))
 local ItemPickup = require(Items:WaitForChild("ItemPickup"))
 local ItemView = require(Items:WaitForChild("ItemView"))
+local MobileHud = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MobileHud"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
@@ -30,6 +31,7 @@ local player = Players.LocalPlayer
 local actionRemote
 local pickup
 local slot
+local touchPanel
 
 local collected = false
 local equipped = false
@@ -182,6 +184,9 @@ local function setPower(value)
 	if character then
 		ItemView.SetPower(character, ITEM_ID, value)
 	end
+	if touchPanel then
+		touchPanel:SetOn(value)
+	end
 	actionRemote:FireServer(ITEM_ID, "on", value)
 end
 
@@ -200,6 +205,14 @@ local function setHand(value)
 	local character = player.Character
 	if character then
 		ItemView.SetPose(character, ITEM_ID, value)
+	end
+	-- O painel de toque é da mão: fora dela a luz não acende, e o botão não teria o que fazer.
+	if touchPanel then
+		if value then
+			touchPanel:Show()
+		else
+			touchPanel:Hide()
+		end
 	end
 	if value then
 		ItemHold.Claim(ITEM_ID)
@@ -238,6 +251,9 @@ local function drop()
 	ItemHold.Release(ITEM_ID)
 	if slot then
 		slot:Hide()
+	end
+	if touchPanel then
+		touchPanel:Hide()
 	end
 	if character then
 		ItemView.Hide(character, ITEM_ID)
@@ -295,6 +311,15 @@ function FlashlightController.Start()
 	end
 	slot.held = drop
 
+	-- Vai o valor absoluto que o botão pede, não um "alterna": o par On/Off já diz qual é.
+	touchPanel = MobileHud.Panel(ITEM_ID, function(wanted)
+		if inHand then
+			setPower(wanted)
+		end
+	end)
+	touchPanel:SetOn(lit)
+	touchPanel:Hide()
+
 	ItemHold.Bind(ITEM_ID, FlashlightConfig.HoldAnimationId, function()
 		setHand(false)
 	end)
@@ -323,6 +348,10 @@ function FlashlightController.Start()
 		inHand = false
 		lit = false
 		ItemHold.Release(ITEM_ID)
+		if touchPanel then
+			touchPanel:SetOn(false)
+			touchPanel:Hide()
+		end
 		if slot then
 			slot:Hide()
 		end
