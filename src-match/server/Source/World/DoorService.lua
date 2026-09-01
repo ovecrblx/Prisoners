@@ -9,6 +9,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DoorConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("DoorConfig"))
 local CollisionService = require(script.Parent:WaitForChild("CollisionService"))
 
+local ANCHOR_NAME = "PromptAnchor"
+
 local nearDoors = {}
 
 -- Corpos que abrem porta sem apertar nada. A porta não sabe o que é um NPC: sabe que alguém se
@@ -93,6 +95,24 @@ local function buildPrompt(door, parent)
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		openFrom(door, root and root.Position or door.center)
 	end)
+end
+
+-- Um prompt por face, cada um numa Attachment à frente da sua. A engine mede o caminho da câmera
+-- até o prompt, e a maçaneta tem o miolo dentro da folha: prompt único ali fica tapado pela porta
+-- dos dois lados. As Attachments andam com a folha e não entram em consulta nenhuma.
+-- Só um aparece de cada vez: o outro está do lado de lá da porta, e Exclusivity nasce OnePerButton.
+local function buildPrompts(door, leaf, knob)
+	local face = DoorConfig.FaceAxis(leaf)
+	local center = leaf.CFrame:PointToObjectSpace((knob or leaf).Position)
+	local reach = math.abs(face:Dot(leaf.Size)) / 2 + DoorConfig.PromptDepth
+
+	for _, side in ipairs({ 1, -1 }) do
+		local mark = Instance.new("Attachment")
+		mark.Name = ANCHOR_NAME
+		mark.Position = center + face * side * reach
+		mark.Parent = leaf
+		buildPrompt(door, mark)
+	end
 end
 
 local function closer(closest, best, root, center)
@@ -199,7 +219,7 @@ local function register(model)
 	nearDoors[#nearDoors + 1] = door
 
 	if not door.dual then
-		buildPrompt(door, knob or hinges[1])
+		buildPrompts(door, hinges[1], knob)
 	end
 end
 

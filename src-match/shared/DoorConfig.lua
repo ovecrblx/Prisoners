@@ -85,6 +85,11 @@ DoorConfig.PromptDistance = 10
 DoorConfig.PromptOffset = Vector2.new(0, 50)
 DoorConfig.PromptClickable = false
 
+-- Studs que a âncora do prompt avança para fora da face da folha. A engine só mostra o prompt com
+-- caminho livre da câmera até ele, e a maçaneta tem o miolo DENTRO da porta: ancorado ali, o
+-- prompt fica tapado pela própria folha. Fora da face, cada lado enxerga o seu.
+DoorConfig.PromptDepth = 0.4
+
 function DoorConfig.Number(model, name, default)
 	local value = model:GetAttribute(name)
 	return type(value) == "number" and value or default
