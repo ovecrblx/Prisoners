@@ -1,4 +1,4 @@
--- Os slots dos itens no HUD. O template é o ImageButton dentro de ManualGui.Hud: Press leva a
+-- Os slots dos itens no HUD. O template é o ImageButton dentro de HudGui.Hud: Press leva a
 -- imagem do item, Key o rótulo da tecla, Fill o progresso do hold. O template fica invisível; cada
 -- item é um clone, na ordem de ItemConfig.Order — que é também a das teclas.
 -- Toque no slot ou na tecla alterna cintura/mão; segurar por HoldTime devolve o item ao cenário. A

@@ -17,9 +17,8 @@ ItemConfig.HandPartName = "LeftHand"
 -- inteiro; estes voltam junto com o item que está na mão.
 ItemConfig.HandChain = { "LeftHand", "LeftLowerArm", "LeftUpperArm" }
 
--- A GUI publicada ainda se chama ManualGui, de quando o caderno era o único item; o Hud dentro
--- dela é que carrega os slots de todos.
-ItemConfig.GuiName = "ManualGui"
+-- A GUI publicada carrega o Hud, e é dentro dele que ficam os slots de todos os itens.
+ItemConfig.GuiName = "HudGui"
 ItemConfig.HudName = "Hud"
 ItemConfig.SlotTemplateName = "ImageButton"
 
