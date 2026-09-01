@@ -58,6 +58,8 @@ local function applyBulb(bulb, on, animate)
 	local scale = if on then LampConfig.BulbOnScale else LampConfig.BulbOffScale
 	local color = shade(bulb.base, scale)
 
+	bulb.part.Material = if on then bulb.material else LampConfig.BulbOffMaterial
+
 	if animate then
 		TweenService:Create(bulb.part, BULB_TWEEN, { Color = color }):Play()
 	else
@@ -203,8 +205,9 @@ local function registerBulb(part)
 		end
 	end
 
-	-- A cor de agora é a do cenário: nada a escreveu ainda, e é dela que sai o aceso e o apagado.
-	local bulb = { part = part, base = part.Color }
+	-- A cor e o material de agora são os do cenário: nada os escreveu ainda, e é deles que sai o
+	-- aceso. O apagado é a cor escurecida e o BulbOffMaterial.
+	local bulb = { part = part, base = part.Color, material = part.Material }
 	table.insert(entry.bulbs, bulb)
 	applyBulb(bulb, entry.on, false)
 end

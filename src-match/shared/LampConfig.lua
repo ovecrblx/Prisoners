@@ -25,6 +25,11 @@ LampConfig.BulbOnScale = 1
 LampConfig.BulbOffScale = 0.55
 LampConfig.BulbTime = 0.12
 
+-- Material do bulbo apagado. Aceso ele volta ao que o place autorou, que é Neon: Neon ignora luz e
+-- brilha sozinho, então bulbo apagado em Neon continua aceso por conta própria, por mais escura que
+-- a cor fique. Troca seca, sem percurso — material não é número, não há meio caminho.
+LampConfig.BulbOffMaterial = Enum.Material.Plastic
+
 -- Névoa do Atmosphere puxada pelas luzes de sala: 0 com todos os PointLight de `Light_Part_`
 -- acesos, HazeMax com todos apagados, e proporcional no meio — cada um vale a mesma fatia. Segundos
 -- do percurso até o valor novo.
