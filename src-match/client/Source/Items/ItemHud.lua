@@ -182,6 +182,13 @@ function ItemHud.Gui()
 	return gui
 end
 
+-- Item que toma a tela inteira tira os slots de cena sem mexer no que cada um tem.
+function ItemHud.SetVisible(visible)
+	if hud then
+		hud.Visible = visible
+	end
+end
+
 function ItemHud.Slot(itemId, icon, keyLabel, hotKey)
 	if not hud then
 		return nil

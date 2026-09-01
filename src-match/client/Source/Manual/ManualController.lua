@@ -286,7 +286,10 @@ end
 local function exitUse()
 	use.token += 1
 	currentPage = 1
-	-- Antes da saída curta: livro fechado por outro caminho também tira as setas da tela.
+	-- Antes da saída curta: livro fechado por outro caminho também tira os botões da tela.
+	if touchPanel then
+		touchPanel:Hide()
+	end
 	if touchPager then
 		touchPager.next:Hide()
 		touchPager.previous:Hide()
@@ -327,6 +330,7 @@ local function exitUse()
 	if mainGui then
 		mainGui.Enabled = true
 	end
+	ItemHud.SetVisible(true)
 end
 
 local function enterUse()
@@ -341,6 +345,9 @@ local function enterUse()
 	end
 	use.active = true
 
+	if touchPanel then
+		touchPanel:Show()
+	end
 	if touchPager then
 		touchPager.next:Show()
 		touchPager.previous:Show()
@@ -353,6 +360,7 @@ local function enterUse()
 	if mainGui then
 		mainGui.Enabled = false
 	end
+	ItemHud.SetVisible(false)
 	hideHeads()
 	hideAccessories()
 	bindHitboxes(character, view)
@@ -518,9 +526,6 @@ function setHand(value)
 	if character then
 		ItemView.SetPose(character, ITEM_ID, value)
 	end
-	if touchPanel then
-		touchPanel:SetOn(value)
-	end
 	if value then
 		enterUse()
 	else
@@ -533,9 +538,6 @@ local function release()
 	exitUse()
 	if slot then
 		slot:Hide()
-	end
-	if touchPanel then
-		touchPanel:Hide()
 	end
 end
 
@@ -552,11 +554,6 @@ local function equip(character)
 	ItemView.SetPose(character, ITEM_ID, false)
 	if slot then
 		slot:Show()
-	end
-	-- O painel do caderno é da POSSE, não da mão: é por ele que o toque abre o livro guardado.
-	if touchPanel then
-		touchPanel:SetOn(false)
-		touchPanel:Show()
 	end
 	task.spawn(ItemHold.Preload, ITEM_ID, character)
 end
@@ -605,9 +602,11 @@ function ManualController.Start()
 	end
 	slot.held = drop
 
-	-- Vai o valor absoluto que o botão pede: On abre o caderno, Off guarda. As setas são painel sem
-	-- par — o Frame inteiro é um botão só — e só existem com o livro aberto.
-	touchPanel = MobileHud.Panel(ITEM_ID, setHand)
+	-- Os três painéis do toque são do livro aberto: fechar e virar página. Abrir é do slot do HUD, que
+	-- some com a leitura. Painel sem par — o Frame inteiro é um botão só.
+	touchPanel = MobileHud.Panel(ITEM_ID, nil, function()
+		setHand(false)
+	end)
 	touchPanel:Hide()
 	touchPager = {
 		next = MobileHud.Panel("Right", nil, function()

@@ -170,8 +170,8 @@ function Panel:SetOn(on)
 	paint(entry)
 end
 
--- `tapped` recebe o valor que o toque pede: On manda true, Off manda false. `pressed` é do painel
--- sem par, como as setas de página — o Frame inteiro é um botão só.
+-- `tapped` recebe o valor que o toque pede: On manda true, Off manda false. `pressed` é do painel de
+-- ação única, como as setas de página e o fechar do caderno — o Frame inteiro é um botão só.
 function MobileHud.Panel(name, tapped, pressed)
 	local entry = panelOf(name)
 	entry.name = name
