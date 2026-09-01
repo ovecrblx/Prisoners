@@ -31,8 +31,10 @@ local function group(suffix)
 	return entry
 end
 
--- O Beam e as luzes são lidos na hora: o streaming pode devolvê-los depois do bulbo, e uma lista
--- guardada no registro ficaria velha.
+-- O Beam, as luzes e a poeira são lidos na hora: o streaming pode devolvê-los depois do bulbo, e uma
+-- lista guardada no registro ficaria velha.
+-- Apagar corta o que ia nascer; partícula já no ar vive o próprio Lifetime, e some junto com o
+-- facho em vez de sumir com ele.
 local function applyBulb(bulb, on, animate)
 	local scale = if on then LampConfig.BulbOnScale else LampConfig.BulbOffScale
 	local base = bulb.base
@@ -49,7 +51,7 @@ local function applyBulb(bulb, on, animate)
 	end
 
 	for _, item in ipairs(bulb.part:GetChildren()) do
-		if item:IsA("Beam") or item:IsA("Light") then
+		if item:IsA("Beam") or item:IsA("Light") or item:IsA("ParticleEmitter") then
 			item.Enabled = on
 		end
 	end

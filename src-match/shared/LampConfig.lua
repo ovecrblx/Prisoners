@@ -19,7 +19,7 @@ LampConfig.StartOn = true
 -- Aceso e apagado do bulbo, em fração da cor que o bulbo já tem no cenário: 1 é ela intacta, 0 é
 -- preto. Quem escolhe a cor é o place, e aqui só se mexe em quanto ela clareia ou escurece —
 -- multiplicar os três canais junto mantém matiz e saturação. Acima de 1 os canais saturam, e aí a
--- matiz anda. O Beam e as luzes dentro do bulbo acompanham o estado.
+-- matiz anda. O Beam, as luzes e a poeira dentro do bulbo acompanham o estado.
 LampConfig.BulbOnScale = 1
 LampConfig.BulbOffScale = 0.55
 LampConfig.BulbTime = 0.12
