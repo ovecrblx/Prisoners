@@ -39,8 +39,50 @@ local lit = false
 -- O skin em uso mora no Handle e o de reserva na pasta, então procurar só na pasta acha um só a
 -- partir da primeira troca. Os dois lugares valem.
 local function findSkin(model, handle, name)
+
 	local folder = model:FindFirstChild(FlashlightConfig.SkinFolderName)
 	return (folder and folder:FindFirstChild(name)) or handle:FindFirstChild(name)
+end
+
+-- Molde de cada ParticleEmitter do Handle, tirado na primeira vez que a réplica passa por aqui — e
+-- essa primeira vez é sempre apagando, no dress do modelo recém-clonado, então o molde sai com o que
+-- o template configurou. Guarda também em que Attachment ele morava, que é para onde a cópia volta.
+-- Chave fraca no Handle: a réplica morre e leva o estoque junto.
+local emitterStock = setmetatable({}, { __mode = "k" })
+
+local function stockOf(handle)
+	local stock = emitterStock[handle]
+	if stock then
+		return stock
+	end
+
+	stock = {}
+	for _, item in ipairs(handle:GetDescendants()) do
+		if item:IsA("ParticleEmitter") then
+			table.insert(stock, { mold = item:Clone(), parent = item.Parent, live = item })
+		end
+	end
+	emitterStock[handle] = stock
+	return stock
+end
+
+-- Apagar destrói o emissor; acender põe de volta uma cópia do molde. Destruir é o que não deixa
+-- rastro: Enabled só corta o que ia nascer, e partícula já no ar carrega o próprio Lifetime até o
+-- fim. Cópia nova a cada acender, e nenhuma propriedade do emissor é escrita em runtime.
+local function switchEmitters(handle, on)
+	for _, entry in ipairs(stockOf(handle)) do
+		local live = entry.live
+		if on then
+			if not (live and live.Parent) and entry.parent.Parent then
+				local copy = entry.mold:Clone()
+				copy.Parent = entry.parent
+				entry.live = copy
+			end
+		elseif live then
+			live:Destroy()
+			entry.live = nil
+		end
+	end
 end
 
 -- Um só lugar decide o que "aceso" quer dizer no modelo, e vale igual para o exemplar do cenário,
@@ -54,6 +96,7 @@ local function applyPower(model, handle, on)
 	if beam then
 		beam.Enabled = on
 	end
+	switchEmitters(handle, on)
 
 	local folder = model:FindFirstChild(FlashlightConfig.SkinFolderName)
 	local skinOn = findSkin(model, handle, FlashlightConfig.SkinOnName)
@@ -102,26 +145,27 @@ local function captureBeam(view)
 	view.beamSpan = span.Magnitude
 	view.beamWidth = beam.Width1
 end
-
 -- Recorta o feixe na primeira superfície à frente, e no teto de BeamRange quando não há nenhuma.
 -- Sem isto o feixe atravessa parede: Beam é desenho, não consulta o mundo sozinho.
 -- A largura acompanha o corte para o cone manter o ângulo — parada em 12 studs de largura contra
 -- uma parede a dois studs, a ponta viraria um disco.
+-- O RaycastParams é um só, reusado: isto roda todo quadro, por réplica acesa.
+local beamParams = RaycastParams.new()
+beamParams.FilterType = Enum.RaycastFilterType.Exclude
+beamParams.IgnoreWater = true
+
 local function aimBeam(view, character)
 	local beam = view.beam
 	if not (beam and beam.Enabled) then
 		return
 	end
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { character }
-	params.IgnoreWater = true
+	beamParams.FilterDescendantsInstances = { character }
 
 	local handle = view.handle
 	local origin = handle.CFrame * view.beamOrigin
 	local direction = handle.CFrame:VectorToWorldSpace(view.beamAxis)
-	local hit = workspace:Raycast(origin, direction * FlashlightConfig.BeamRange, params)
+	local hit = workspace:Raycast(origin, direction * FlashlightConfig.BeamRange, beamParams)
 	local reach = math.min(hit and hit.Distance or FlashlightConfig.BeamRange, FlashlightConfig.BeamRange)
 
 	view.beamFar.Position = view.beamOrigin + view.beamAxis * reach

@@ -117,16 +117,40 @@ local function settle(delta)
 	end
 end
 
-local function collectShown(model)
-	local shown = {}
-	for _, item in ipairs(model:GetDescendants()) do
-		for _, className in ipairs(SHOWN_CLASSES) do
-			if item:IsA(className) then
-				table.insert(shown, item)
-				break
-			end
+local function isShown(item)
+	for _, className in ipairs(SHOWN_CLASSES) do
+		if item:IsA(className) then
+			return true
 		end
 	end
+	return false
+end
+
+-- A lista é viva: item que nasce depois do build entra nela. A poeira da lanterna é destruída e
+-- reclonada a cada interruptor, e uma lista tirada só no build perderia a cópia nova — em primeira
+-- pessoa ela sumiria com o resto do corpo.
+local function collectShown(view, model)
+	local shown = {}
+	for _, item in ipairs(model:GetDescendants()) do
+		if isShown(item) then
+			table.insert(shown, item)
+		end
+	end
+	view.shownLinks = {
+		model.DescendantAdded:Connect(function(item)
+			if isShown(item) then
+				table.insert(view.shown, item)
+			end
+		end),
+		model.DescendantRemoving:Connect(function(item)
+			for index, listed in ipairs(view.shown) do
+				if listed == item then
+					table.remove(view.shown, index)
+					break
+				end
+			end
+		end),
+	}
 	return shown
 end
 
@@ -185,7 +209,7 @@ local function build(character, itemId, waist)
 	if spec.dress then
 		spec.dress(view)
 	end
-	view.shown = collectShown(model)
+	view.shown = collectShown(view, model)
 
 	local joint = Instance.new("Motor6D")
 	joint.Name = ItemConfig.JointName
@@ -277,6 +301,10 @@ function ItemView.Hide(character, itemId)
 	byItem[itemId] = nil
 	if next(byItem) == nil then
 		views[character] = nil
+	end
+
+	for _, link in ipairs(view.shownLinks) do
+		link:Disconnect()
 	end
 
 	if view.config.AimChainRoot then
