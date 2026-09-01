@@ -56,6 +56,33 @@ FlashlightConfig.AimSmoothTime = 0.03
 -- Some com o AimSmoothTime: este atrasa o alvo, aquele atrasa o solver atrás do alvo.
 FlashlightConfig.AimFollowTime = 0.18
 
+-- A lanterna fora do PC, onde não há mouse e teclado juntos: lá quem aponta é a câmera, e o que se
+-- vê dela é outro. Tudo o que estiver aqui substitui o de cima enquanto o aparelho for esse, e chave
+-- que faltar cai no valor de cima.
+-- HandOffset e HandAngles são a lanterna na mão, com a mesma leitura da de cima: studs no espaço da
+-- mão, e graus relativos à direção que o personagem encara — X positivo levanta a ponta. São os que
+-- se mexe para a lanterna aparecer mais alta na tela sem tocar no PC.
+-- AimCameraPitch é em graus e só existe aqui: a câmera fica acima do ombro e cai um pouco para
+-- mostrar o personagem, então o rumo cru dela mira no chão à frente. Positivo levanta, negativo
+-- baixa, 0 é a câmera crua.
+-- AimLockOnMove prende a mira na linha da frente do corpo enquanto o jogador anda, e só parado ela
+-- volta a seguir a câmera: virar a câmera andando disputaria o mesmo dedo que anda. Prender e soltar
+-- correm no AimFollowTime, como qualquer outro rumo.
+-- O campo da frente e o arrasto estão repetidos para se afastarem dos do PC sem levá-lo junto.
+-- Pose assada é a exceção: HandC0Offset e HandC0Angles moram só lá em cima e passam por herança, e
+-- assá-la vale para os dois. Assar uma por aparelho pede o par repetido aqui.
+FlashlightConfig.OffPc = {
+	HandOffset = Vector3.new(-0.2, -0.2, -0.25),
+	HandAngles = Vector3.new(0.5, 5, 0),
+	AimCameraPitch = 8,
+	AimLockOnMove = true,
+	AimFieldDistance = 8,
+	AimFieldRadius = 6,
+	AimFollowTime = 0.18,
+}
+
+setmetatable(FlashlightConfig.OffPc, { __index = FlashlightConfig })
+
 FlashlightConfig.HandC0Offset = nil
 FlashlightConfig.HandC0Angles = nil
 

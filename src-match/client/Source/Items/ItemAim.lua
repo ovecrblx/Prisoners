@@ -1,8 +1,9 @@
--- Pontaria do item: um IKControl puxa a mão de quem segura até um alvo no rumo do mouse, e o solver
--- do engine faz o braço. A cadeia vai do ChainRoot ao EndEffector, os dois inclusive; o item pendura
--- abaixo dela, então guarda a posição e o ângulo do config e não é tocado.
--- O alvo é uma Attachment própria, solta no mundo: só a direção vem do mouse, e a distância é a que
--- o efetor tinha em repouso, para o solver girar o braço em vez de esticá-lo atrás de uma parede.
+-- Pontaria do item: um IKControl puxa a mão de quem segura até um alvo no rumo do ponteiro, e o
+-- solver do engine faz o braço. A cadeia vai do ChainRoot ao EndEffector, os dois inclusive; o item
+-- pendura abaixo dela, então guarda a posição e o ângulo do config e não é tocado.
+-- O alvo é uma Attachment própria, solta no mundo: só a direção vem do ponteiro — o mouse no PC, a
+-- câmera fora dele —, e a distância é a que o efetor tinha em repouso, para o solver girar o braço
+-- em vez de esticá-lo atrás de uma parede.
 -- Os limites de junta do rig ficam como vieram: o que segura a mira é o campo à frente do corpo, em
 -- AimFieldDistance e AimFieldRadius, para o braço não ir atrás do ponteiro quando ele passa para as
 -- costas.
@@ -11,10 +12,14 @@
 -- pede a saída; quem apaga o controle é o passo, ao chegar em zero. Clear apaga na hora.
 -- Só de quem mira: instância criada no cliente não replica, então os outros veem o braço da
 -- animação. Réplica de outro jogador não tem ponteiro para ler, e nem tenta.
+-- Fora do PC, com AimLockOnMove, andar prende a mira na linha da frente do corpo, e só parado ela
+-- volta a seguir a câmera: mirar andando disputaria o mesmo dedo que anda.
 local ItemAim = {}
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+
+local ItemDevice = require(script.Parent:WaitForChild("ItemDevice"))
 
 local player = Players.LocalPlayer
 
@@ -72,6 +77,7 @@ function ItemAim.Bind(character, config)
 		control = control,
 		mark = mark,
 		anchor = anchor,
+		humanoid = humanoid,
 		reach = (effector.Position - anchor.Position).Magnitude,
 		weight = 0,
 		wanted = config.AimWeight,
@@ -123,26 +129,49 @@ local function clampToField(direction, root, distance, radius)
 	return root.CFrame:VectorToWorldSpace(Vector3.new(planar.X, planar.Y, -distance).Unit)
 end
 
--- O rumo do mouse, já preso ao campo da frente. Só a DIREÇÃO vem do mouse: a distância do alvo é a
+local function aimLocked(state)
+	if ItemDevice.OnPc() then
+		return false
+	end
+	return ItemDevice.Tuning(state.config).AimLockOnMove == true
+		and state.humanoid.MoveDirection.Magnitude > EPSILON
+end
+
+-- O rumo do ponteiro, já preso ao campo da frente. Só a DIREÇÃO vem dele: a distância do alvo é a
 -- que o efetor tinha em repouso, para o solver girar o braço em vez de esticá-lo atrás de uma parede.
+-- Fora do PC quem aponta é a câmera. Não há ponteiro a ler ali: GetMouseLocation devolve o último
+-- toque, que ficou onde o dedo saiu, e mirar é virar a câmera.
+-- A câmera não olha reto: ela fica acima do ombro e cai um pouco para mostrar o personagem. Por isso
+-- AimCameraPitch levanta o rumo antes do raio, girando em torno do eixo lateral da própria câmera —
+-- positivo sobe.
 local function aimDirection(state, character, root)
 	local camera = workspace.CurrentCamera
 	if not camera then
 		return nil
 	end
 
-	local location = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(location.X, location.Y)
+	local tune = ItemDevice.Tuning(state.config)
+	local origin, heading
+	if ItemDevice.OnPc() then
+		local location = UserInputService:GetMouseLocation()
+		local ray = camera:ViewportPointToRay(location.X, location.Y)
+		origin, heading = ray.Origin, ray.Direction
+	else
+		local lift = CFrame.fromAxisAngle(camera.CFrame.RightVector, math.rad(tune.AimCameraPitch))
+		origin = camera.CFrame.Position
+		heading = lift:VectorToWorldSpace(camera.CFrame.LookVector)
+	end
+
 	rayParams.FilterDescendantsInstances = { character }
-	local range = state.config.MouseRange
-	local hit = workspace:Raycast(ray.Origin, ray.Direction * range, rayParams)
-	local point = if hit then hit.Position else ray.Origin + ray.Direction * range
+	local range = tune.MouseRange
+	local hit = workspace:Raycast(origin, heading * range, rayParams)
+	local point = if hit then hit.Position else origin + heading * range
 
 	local reach = point - state.anchor.Position
 	if reach.Magnitude < EPSILON then
 		return nil
 	end
-	return clampToField(reach.Unit, root, state.config.AimFieldDistance, state.config.AimFieldRadius)
+	return clampToField(reach.Unit, root, tune.AimFieldDistance, tune.AimFieldRadius)
 end
 
 -- O alvo PERSEGUE o rumo do mouse, não cola nele: a cada quadro anda uma fração do que falta, e a
@@ -179,10 +208,17 @@ function ItemAim.Step(delta)
 			ItemAim.Clear(character)
 		else
 			rampWeight(state, delta)
-			local wanted = aimDirection(state, character, root)
+			-- A trava entra pelo mesmo arrasto do AimFollowTime: prender é a mira correndo até a
+			-- frente do corpo, não um salto no quadro em que o passo começa.
+			local wanted
+			if aimLocked(state) then
+				wanted = root.CFrame.LookVector
+			else
+				wanted = aimDirection(state, character, root)
+			end
 			if wanted then
 				local inBody = root.CFrame:VectorToObjectSpace(wanted)
-				local follow = state.config.AimFollowTime
+				local follow = ItemDevice.Tuning(state.config).AimFollowTime
 				local settled = state.aim
 				if settled and follow > 0 then
 					local blend = settled:Lerp(inBody, 1 - math.exp(-delta / follow))

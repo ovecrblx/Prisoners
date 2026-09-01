@@ -19,6 +19,7 @@ local RunService = game:GetService("RunService")
 
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local ItemAim = require(script.Parent:WaitForChild("ItemAim"))
+local ItemDevice = require(script.Parent:WaitForChild("ItemDevice"))
 local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemConfig"))
 
 local TEMPLATE_TIMEOUT = 10 -- segundos esperando os templates aparecerem no boot
@@ -42,7 +43,8 @@ local views = {}
 local pending = {}
 local settleLink
 
--- Pose da mão já travada, por item. Só do personagem do dono: a réplica dos outros pode nascer com a
+-- Pose da mão já travada, por perfil de config: a chave é a tabela de onde os números saíram, e cada
+-- item tem a sua, uma por aparelho. Só do personagem do dono: a réplica dos outros pode nascer com a
 -- animação de segurar em qualquer ponto do loop, e congelaria um valor de fase errada.
 local handPose = {}
 
@@ -82,19 +84,20 @@ end
 
 local function settleView(character, view, delta)
 	local part0 = view.joint.Part0
-	local c0 = part0 and poseC0(character, part0, view.config)
+	local tune = view.tune or view.config
+	local c0 = part0 and poseC0(character, part0, tune)
 	if not c0 then
 		return
 	end
 	view.joint.C0 = c0
 	view.held += delta
-	if view.held < view.config.HandSettleTime then
+	if view.held < tune.HandSettleTime then
 		return
 	end
 	view.handC0 = c0
 	if character == player.Character then
-		handPose[view.itemId] = c0
-		if view.config.CalibrateHand then
+		handPose[tune] = c0
+		if tune.CalibrateHand then
 			readback(view.itemId, view.joint)
 		end
 	end
@@ -109,6 +112,21 @@ local function settle(delta)
 			if character.Parent == nil or view.model.Parent == nil then
 				ItemView.Hide(character, itemId)
 			else
+				-- Aparelho trocado com o item na mão: a pose passa à do perfil novo, pronta se ele já
+				-- foi amostrado e reamostrada se não. Sem isto, mexer nos números do Mobile só valeria
+				-- no saque seguinte.
+				if view.inHand and character == player.Character then
+					local tune = ItemDevice.Tuning(view.config)
+					if view.tune ~= tune then
+						view.tune = tune
+						view.held = 0
+						view.handC0 = handPose[tune]
+						if view.handC0 then
+							view.joint.C0 = view.handC0
+						end
+					end
+				end
+
 				if view.inHand and not view.handC0 then
 					settleView(character, view, delta)
 				elseif view.inHand and view.config.AimChainRoot and character == player.Character then
@@ -377,14 +395,18 @@ function ItemView.SetPose(character, itemId, inHand)
 	view.held = 0
 	view.handC0 = nil
 	view.joint.Part0 = part0
+	-- O perfil do aparelho é lido aqui e guardado na réplica: é dele que sai a pose, e é ele que o
+	-- passo compara para saber que o aparelho mudou.
+	local tune = ItemDevice.Tuning(view.config)
+	view.tune = tune
 	-- Pose da mão já conhecida — do config ou da amostragem anterior — é final: nada a amostrar,
 	-- nada a acomodar, e a mira entra no mesmo quadro.
-	local known = inHand and handPose[itemId]
-	local c0 = known or poseC0(character, part0, view.config)
+	local known = inHand and handPose[tune]
+	local c0 = known or poseC0(character, part0, tune)
 	if c0 then
 		view.joint.C0 = c0
 	end
-	if inHand and (known or (view.config.HandC0Offset and view.config.HandC0Angles)) then
+	if inHand and (known or (tune.HandC0Offset and tune.HandC0Angles)) then
 		view.handC0 = view.joint.C0
 	end
 
