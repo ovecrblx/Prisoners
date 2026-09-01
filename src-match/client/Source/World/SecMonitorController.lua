@@ -346,6 +346,11 @@ local function hideCursor()
 end
 
 local function showCursor()
+	-- Sem mouse não há ponteiro a desenhar, e esconder o ícone do sistema não teria o que esconder.
+	if not UserInputService.MouseEnabled then
+		return
+	end
+
 	buildCursor()
 	if not cursorGui then
 		return
@@ -363,9 +368,42 @@ local function showCursor()
 	cursorMove = mouse.Move:Connect(follow)
 end
 
+-- Apertar e soltar valem para todo aparelho: InputBegan e InputEnded do GuiObject trazem o dedo e o
+-- mouse pelo mesmo caminho, e Activated fecha o toque simples em qualquer um. MouseButton1Down/Up e
+-- MouseEnter/Leave são de mouse — no celular a tecla ficava muda.
+local POINTERS = {
+	[Enum.UserInputType.MouseButton1] = true,
+	[Enum.UserInputType.Touch] = true,
+}
+
+-- Soltar longe da tecla não chega ao objeto — arrastar para fora e largar deixaria o gesto preso.
+-- Quem vê isso é o serviço, e daí as duas escutas do fim. O trinco `held` é o que impede a de fora
+-- de soltar tecla que ninguém apertou: sem ele, todo dedo levantado na tela mexeria em todas.
+local function onPointer(object, press, release, links)
+	local held = false
+
+	table.insert(links, object.InputBegan:Connect(function(input)
+		if POINTERS[input.UserInputType] and not held then
+			held = true
+			press()
+		end
+	end))
+
+	local function finish(input)
+		if POINTERS[input.UserInputType] and held then
+			held = false
+			release()
+		end
+	end
+
+	table.insert(links, object.InputEnded:Connect(finish))
+	table.insert(links, UserInputService.InputEnded:Connect(finish))
+end
+
 -- Contar quantos alvos estão sob o ponteiro, em vez de esconder no primeiro MouseLeave: passando
 -- direto de um botão para o vizinho, a saída de um chega depois da entrada do outro e apagaria o
 -- cursor com o mouse ainda em cima.
+-- Só de mouse: dedo não paira, e o ponteiro desenhado não existe fora dele.
 local function watchHover(button, links)
 	links = links or controlLinks
 	table.insert(links, button.MouseEnter:Connect(function()
@@ -425,9 +463,14 @@ local function dressButton(button, source, clickKey, links, homes)
 	end
 	table.insert(homes, { button = button, scale = scale, fade = fade })
 
+	-- Onde o ponteiro para depois de soltar: em cima da tecla ela fica crescida, e no toque, que não
+	-- paira, volta ao tamanho de repouso.
+	local under = false
+
 	table.insert(
 		links,
 		source.MouseEnter:Connect(function()
+			under = true
 			local lifted = math.max(0, fade - HOVER_LIFT)
 			TweenService:Create(scale, HOVER_TWEEN, { Scale = HOVER_GROW }):Play()
 			TweenService:Create(button, HOVER_TWEEN, { BackgroundTransparency = lifted }):Play()
@@ -437,26 +480,18 @@ local function dressButton(button, source, clickKey, links, homes)
 	table.insert(
 		links,
 		source.MouseLeave:Connect(function()
+			under = false
 			TweenService:Create(scale, HOVER_TWEEN, { Scale = 1 }):Play()
 			TweenService:Create(button, HOVER_TWEEN, { BackgroundTransparency = fade }):Play()
 		end)
 	)
 
-	if source:IsA("GuiButton") then
-		table.insert(
-			links,
-			source.MouseButton1Down:Connect(function()
-				TweenService:Create(scale, SINK_TWEEN, { Scale = PRESS_SINK }):Play()
-				Sfx.Play(clickKey)
-			end)
-		)
-		table.insert(
-			links,
-			source.MouseButton1Up:Connect(function()
-				TweenService:Create(scale, SINK_TWEEN, { Scale = HOVER_GROW }):Play()
-			end)
-		)
-	end
+	onPointer(source, function()
+		TweenService:Create(scale, SINK_TWEEN, { Scale = PRESS_SINK }):Play()
+		Sfx.Play(clickKey)
+	end, function()
+		TweenService:Create(scale, SINK_TWEEN, { Scale = if under then HOVER_GROW else 1 }):Play()
+	end, links)
 
 	watchHover(source, links)
 end
@@ -966,6 +1001,8 @@ local function takeView()
 	-- operador a recebe, o feed continua privado de graça.
 	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
 	if surface and surfaceHome and playerGui then
+		-- Active é o que deixa a GUI de mundo receber gesto; sem ele o toque não chega às teclas.
+		surface.Active = true
 		surface.Adornee = surfaceHome
 		surface.Parent = playerGui
 	end
@@ -1706,15 +1743,7 @@ bindControl = function(monitor)
 		pad.Parent = button.Parent
 		hoverPad = pad
 
-		table.insert(
-			controlLinks,
-			pad.InputBegan:Connect(function(input)
-				local kind = input.UserInputType
-				if kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch then
-					pressPower()
-				end
-			end)
-		)
+		onPointer(pad, pressPower, function() end, controlLinks)
 		dressButton(button, pad)
 	end
 
@@ -1862,12 +1891,10 @@ attach = function(index, panel)
 				end
 			end
 
-			table.insert(slot.links, button.MouseButton1Down:Connect(function()
+			onPointer(button, function()
 				turnHeld[direction] = true
 				Servo.start()
-			end))
-			table.insert(slot.links, button.MouseButton1Up:Connect(release))
-			table.insert(slot.links, button.MouseLeave:Connect(release))
+			end, release, slot.links)
 			dressButton(arm, button, nil, slot.links, slot.homes)
 		end
 	end
