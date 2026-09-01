@@ -1,6 +1,8 @@
 -- Lâmpadas e teclas de luz, animadas em cada cliente. O servidor só publica se a tecla está ligada;
 -- o brilho do bulbo, o Beam, o SpotLight e o giro da tecla saem daqui. O sufixo do nome casa
--- `Lamp_<n>` com `Switch_<n>`, e uma tecla acende todas as lâmpadas do mesmo sufixo.
+-- `Lamp_<sala>` e `Light_Part_<sala>` com `Switch_<sala>`, e uma tecla acende tudo do mesmo sufixo.
+-- Duas peças por grupo, com papéis diferentes: o bulbo do `Lamp_` tem cor a escurecer, e o
+-- `Light_Part_` é só a luz solta da sala — nele acende e apaga o que está dentro.
 -- A cor é do cenário, não daqui: cada bulbo guarda a que tinha ao ser registrado, e acender e
 -- apagar só multiplicam essa cor pela fração do estado.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,7 +26,7 @@ local function group(suffix)
 	local entry = groups[suffix]
 
 	if not entry then
-		entry = { on = LampConfig.StartOn, bulbs = {}, buttons = {} }
+		entry = { on = LampConfig.StartOn, bulbs = {}, lights = {}, buttons = {} }
 		groups[suffix] = entry
 	end
 
@@ -57,6 +59,16 @@ local function applyBulb(bulb, on, animate)
 	end
 end
 
+-- Light_Part não tem bulbo nem cor a escurecer: é peça invisível, e o que acende é o que mora
+-- dentro dela.
+local function applyLight(part, on)
+	for _, item in ipairs(part:GetChildren()) do
+		if item:IsA("Beam") or item:IsA("Light") or item:IsA("ParticleEmitter") then
+			item.Enabled = on
+		end
+	end
+end
+
 local function applyButton(button, on, animate)
 	local pose = if on then button.on else button.off
 
@@ -74,6 +86,10 @@ local function setState(suffix, on, animate)
 
 	for _, bulb in ipairs(entry.bulbs) do
 		applyBulb(bulb, on, animate)
+	end
+
+	for _, part in ipairs(entry.lights) do
+		applyLight(part, on)
 	end
 
 	for _, button in ipairs(entry.buttons) do
@@ -117,6 +133,28 @@ local function registerBulb(part)
 	local bulb = { part = part, base = part.Color }
 	table.insert(entry.bulbs, bulb)
 	applyBulb(bulb, entry.on, false)
+end
+
+local function registerLight(part)
+	local suffix = LampConfig.Suffix(part.Name, LampConfig.LightPrefix)
+	if not (part:IsA("BasePart") and suffix) then
+		return
+	end
+
+	local entry = group(suffix)
+
+	for index = #entry.lights, 1, -1 do
+		local light = entry.lights[index]
+		if light == part then
+			return
+		end
+		if light.Parent == nil then
+			table.remove(entry.lights, index)
+		end
+	end
+
+	table.insert(entry.lights, part)
+	applyLight(part, entry.on)
 end
 
 -- As duas poses saem do pivô de repouso, medido uma vez, e o giro é somado a ele. Medir de novo a
@@ -172,17 +210,19 @@ function LampController.Start()
 	end
 
 	-- Com streaming a pasta chega antes do conteúdo, e ele pode ir e voltar. Evento, não varredura.
-	for _, item in ipairs(lighting:GetDescendants()) do
+	local function consider(item)
 		if item.Name == LampConfig.BulbName then
 			registerBulb(item)
+		elseif LampConfig.Suffix(item.Name, LampConfig.LightPrefix) then
+			registerLight(item)
 		end
 	end
 
-	lighting.DescendantAdded:Connect(function(item)
-		if item.Name == LampConfig.BulbName then
-			registerBulb(item)
-		end
-	end)
+	for _, item in ipairs(lighting:GetDescendants()) do
+		consider(item)
+	end
+
+	lighting.DescendantAdded:Connect(consider)
 
 	for _, item in ipairs(interactive:GetDescendants()) do
 		if item.Name == LampConfig.ButtonName then

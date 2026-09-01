@@ -2,13 +2,14 @@
 -- servidor e pelo cliente. O servidor publica o estado na tecla; acender e virar é do cliente.
 local LampConfig = {}
 
--- Estrutura esperada no place: `Lamp_<n>` carrega o Part `Light`, e o `Switch_<n>` de mesmo número
--- carrega a tecla `Button`. O sufixo do nome é o que casa os dois; sufixo sem par fica inerte,
--- e mais de uma lâmpada com o mesmo sufixo acende junto.
+-- Estrutura esperada no place, casada pelo sufixo do nome: `Lamp_<sala>` carrega o Part `Light`,
+-- `Light_Part_<sala>` é a luz solta da sala, e o `Switch_<sala>` de mesmo sufixo carrega a tecla
+-- `Button`. Sufixo sem par fica inerte, e tudo que compartilha sufixo acende junto.
 LampConfig.LampFolder = { "Siland_Home", "Lighting" }
 LampConfig.SwitchFolder = { "Siland_Home", "interactive" }
 LampConfig.LampPrefix = "Lamp_"
 LampConfig.SwitchPrefix = "Switch_"
+LampConfig.LightPrefix = "Light_Part_"
 LampConfig.BulbName = "Light"
 LampConfig.ButtonName = "Button"
 LampConfig.OnAttribute = "On"
@@ -63,12 +64,15 @@ function LampConfig.Folder(path, timeout)
 	return folder
 end
 
+-- O sufixo é o que casa as peças, e o índice no fim não entra nele: `Lamp_Lobby_2` e
+-- `Light_Part_Lobby_3` caem no mesmo grupo do `Switch_Lobby`. Só número puro no fim sai, então
+-- `Light_Part_Corridor_C` fica inteiro — e sala que se chame `Lobby_2` cai junto com `Lobby`.
 function LampConfig.Suffix(name, prefix)
 	if string.sub(name, 1, #prefix) ~= prefix then
 		return nil
 	end
 
-	local suffix = string.sub(name, #prefix + 1)
+	local suffix = string.gsub(string.sub(name, #prefix + 1), "_%d+$", "")
 	return suffix ~= "" and suffix or nil
 end
 
