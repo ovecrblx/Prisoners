@@ -1,6 +1,8 @@
 -- Lâmpadas e teclas de luz, animadas em cada cliente. O servidor só publica se a tecla está ligada;
--- a cor do bulbo, o Beam, o SpotLight e o giro da tecla saem daqui. O sufixo do nome casa `Lamp_<n>`
--- com `Switch_<n>`, e uma tecla acende todas as lâmpadas do mesmo sufixo.
+-- o brilho do bulbo, o Beam, o SpotLight e o giro da tecla saem daqui. O sufixo do nome casa
+-- `Lamp_<n>` com `Switch_<n>`, e uma tecla acende todas as lâmpadas do mesmo sufixo.
+-- A cor é do cenário, não daqui: cada bulbo guarda a que tinha ao ser registrado, e acender e
+-- apagar só multiplicam essa cor pela fração do estado.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
@@ -32,15 +34,21 @@ end
 -- O Beam e as luzes são lidos na hora: o streaming pode devolvê-los depois do bulbo, e uma lista
 -- guardada no registro ficaria velha.
 local function applyBulb(bulb, on, animate)
-	local color = if on then LampConfig.BulbOn else LampConfig.BulbOff
+	local scale = if on then LampConfig.BulbOnScale else LampConfig.BulbOffScale
+	local base = bulb.base
+	local color = Color3.new(
+		math.min(base.R * scale, 1),
+		math.min(base.G * scale, 1),
+		math.min(base.B * scale, 1)
+	)
 
 	if animate then
-		TweenService:Create(bulb, BULB_TWEEN, { Color = color }):Play()
+		TweenService:Create(bulb.part, BULB_TWEEN, { Color = color }):Play()
 	else
-		bulb.Color = color
+		bulb.part.Color = color
 	end
 
-	for _, item in ipairs(bulb:GetChildren()) do
+	for _, item in ipairs(bulb.part:GetChildren()) do
 		if item:IsA("Beam") or item:IsA("Light") then
 			item.Enabled = on
 		end
@@ -95,16 +103,18 @@ local function registerBulb(part)
 	-- a mesma varredura solta as peças mortas, senão a lista cresceria um cadáver por ciclo.
 	for index = #entry.bulbs, 1, -1 do
 		local bulb = entry.bulbs[index]
-		if bulb == part then
+		if bulb.part == part then
 			return
 		end
-		if bulb.Parent == nil then
+		if bulb.part.Parent == nil then
 			table.remove(entry.bulbs, index)
 		end
 	end
 
-	table.insert(entry.bulbs, part)
-	applyBulb(part, entry.on, false)
+	-- A cor de agora é a do cenário: nada a escreveu ainda, e é dela que sai o aceso e o apagado.
+	local bulb = { part = part, base = part.Color }
+	table.insert(entry.bulbs, bulb)
+	applyBulb(bulb, entry.on, false)
 end
 
 -- As duas poses saem do pivô de repouso, medido uma vez, e o giro é somado a ele. Medir de novo a

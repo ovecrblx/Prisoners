@@ -16,9 +16,12 @@ LampConfig.OnAttribute = "On"
 -- Estado em que o place nasce: a tecla já vem ligada, e é assim que a sala está montada.
 LampConfig.StartOn = true
 
--- Aceso e apagado do bulbo. O Beam e as luzes dentro dele acompanham o estado.
-LampConfig.BulbOn = Color3.fromRGB(179, 147, 88)
-LampConfig.BulbOff = Color3.fromRGB(104, 86, 51)
+-- Aceso e apagado do bulbo, em fração da cor que o bulbo já tem no cenário: 1 é ela intacta, 0 é
+-- preto. Quem escolhe a cor é o place, e aqui só se mexe em quanto ela clareia ou escurece —
+-- multiplicar os três canais junto mantém matiz e saturação. Acima de 1 os canais saturam, e aí a
+-- matiz anda. O Beam e as luzes dentro do bulbo acompanham o estado.
+LampConfig.BulbOnScale = 1
+LampConfig.BulbOffScale = 0.55
 LampConfig.BulbTime = 0.12
 
 -- Giro da tecla em graus, somado à pose em que ela foi publicada, em torno do eixo local do próprio
