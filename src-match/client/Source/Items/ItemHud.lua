@@ -11,6 +11,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemConfig"))
+local ItemHold = require(script.Parent:WaitForChild("ItemHold"))
 
 local GUI_TIMEOUT = 10 -- segundos esperando a GUI publicada no PlayerGui
 local FILL_HIDDEN = UDim2.fromScale(0, 0)
@@ -22,6 +23,7 @@ local player = Players.LocalPlayer
 local gui, hud, template
 local slots = {}
 local keyLink
+local seated = false
 
 local Slot = {}
 Slot.__index = Slot
@@ -40,9 +42,10 @@ local function anyVisible()
 	return false
 end
 
+-- Sentado a GUI inteira sai: nada do que ela oferece vale de um assento, e o item já saiu da mão.
 local function refreshGui()
 	if gui then
-		gui.Enabled = anyVisible()
+		gui.Enabled = anyVisible() and not seated
 	end
 end
 
@@ -208,6 +211,11 @@ function ItemHud.Slot(itemId, icon, keyLabel, hotKey)
 end
 
 function ItemHud.Init()
+	ItemHold.OnSeat(function(active)
+		seated = active
+		refreshGui()
+	end)
+
 	local playerGui = player:WaitForChild("PlayerGui", GUI_TIMEOUT)
 	gui = playerGui and playerGui:WaitForChild(ItemConfig.GuiName, GUI_TIMEOUT)
 	if not gui then

@@ -521,6 +521,9 @@ function setHand(value)
 	if not equipped or inHand == value then
 		return
 	end
+	if value and ItemHold.Seated() then
+		return
+	end
 	inHand = value
 	local character = player.Character
 	if character then

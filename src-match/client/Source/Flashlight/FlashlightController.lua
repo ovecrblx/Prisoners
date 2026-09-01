@@ -196,6 +196,9 @@ local function setHand(value)
 	if not equipped or inHand == value then
 		return
 	end
+	if value and ItemHold.Seated() then
+		return
+	end
 	-- Guardar apaga: na cintura a lanterna não acende, e sair da mão com ela acesa deixaria o
 	-- facho saindo do quadril.
 	if not value then

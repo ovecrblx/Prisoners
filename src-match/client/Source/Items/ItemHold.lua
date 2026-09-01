@@ -4,14 +4,21 @@
 -- atravessados, e o modo de leitura do caderno disputaria a câmera com a lanterna acesa.
 -- Em personagem de jogador a replicação de animação é cliente -> servidor, nunca o contrário,
 -- então quem vê o braço subir nos outros é este track tocando no dono deles.
+-- Sentado a mão fica vazia: sentar tem animação própria e o item guarda sozinho, e enquanto o
+-- jogador não levantar nenhum sai da cintura.
 local ItemHold = {}
 
 local Players = game:GetService("Players")
+
+local HUMANOID_WAIT = 10 -- segundos esperando o Humanoid do personagem novo
 
 local player = Players.LocalPlayer
 
 local entries = {}
 local holder
+local seated = false
+local seatLink
+local seatHooks = {}
 
 local function entryOf(itemId)
 	local entry = entries[itemId]
@@ -91,6 +98,70 @@ function ItemHold.Release(itemId)
 	if entry and entry.track then
 		entry.track:Stop()
 	end
+end
+
+-- Esvazia a mão pelo mesmo caminho da troca de item: quem devolve o item à cintura e avisa o
+-- servidor é o stow do dono. `holder` cai antes, senão o Release que esse stow dispara desfaria uma
+-- posse que já não existe.
+function ItemHold.Stow()
+	local entry = holder and entries[holder]
+	holder = nil
+	if not entry then
+		return
+	end
+	if entry.track then
+		entry.track:Stop()
+	end
+	if entry.stow then
+		entry.stow()
+	end
+end
+
+function ItemHold.Seated()
+	return seated
+end
+
+-- Quem mais depende de estar sentado se pendura aqui, e recebe o estado de agora ao se pendurar: o
+-- assento pode já estar ocupado quando o ouvinte chega.
+function ItemHold.OnSeat(hook)
+	table.insert(seatHooks, hook)
+	hook(seated)
+end
+
+local function setSeated(active)
+	seated = active
+	if active then
+		ItemHold.Stow()
+	end
+	for _, hook in ipairs(seatHooks) do
+		hook(active)
+	end
+end
+
+-- Humanoid.Seated e não o Occupant do assento: ele dispara no quadro do gesto, e o Occupant só muda
+-- depois da volta do servidor — o item ficaria na mão durante a animação de sentar.
+-- Uma conexão por vez: personagem novo traz Humanoid novo, e morrer sentado tem de zerar o estado.
+local function watch(character)
+	if seatLink then
+		seatLink:Disconnect()
+		seatLink = nil
+	end
+
+	local humanoid = character:WaitForChild("Humanoid", HUMANOID_WAIT)
+	if not humanoid then
+		warn("[ItemHold] personagem sem Humanoid; sentar não guarda o item")
+		return
+	end
+
+	setSeated(humanoid.Sit)
+	seatLink = humanoid.Seated:Connect(setSeated)
+end
+
+function ItemHold.Start()
+	if player.Character then
+		watch(player.Character)
+	end
+	player.CharacterAdded:Connect(watch)
 end
 
 return ItemHold
