@@ -71,8 +71,11 @@ local SfxConfig = {
 	FlashlightEquip = { Id = 85940558580144, Volume = 0.5, Range = 25 },
 	FlashlightStow = { Id = 104955812643358, Volume = 0.5, Range = 25 },
 
-	-- Folha virando, no Handle do caderno. Só o dono vira página — os outros nem desenham isso.
+	-- Caderno: folha virando e a troca cintura/mão, presos no Handle. Só o dono vira página — os
+	-- outros nem desenham isso; a troca eles veem, e ouvem.
 	ManualPage = { Id = 128266063262896, Volume = 0.5, Range = 20 },
+	ManualEquip = { Id = 7244308623, Volume = 0.5, Range = 25 },
+	ManualStow = { Id = 7244593699, Volume = 0.5, Range = 25 },
 
 	-- Coleta no cenário, uma chave por item. Sem peça, porque o exemplar some no mesmo quadro e
 	-- levaria o som junto; e o som é só de quem pegou, como a coleta inteira.
