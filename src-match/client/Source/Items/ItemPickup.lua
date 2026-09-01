@@ -28,7 +28,6 @@ local function buildPrompt(parent, triggered)
 	prompt.ClickablePrompt = DoorConfig.PromptClickable
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = DoorConfig.PromptDistance
-	prompt.RequiresLineOfSight = false
 	prompt.Parent = parent
 
 	prompt.Triggered:Connect(triggered)

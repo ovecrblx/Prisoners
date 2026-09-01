@@ -16,7 +16,6 @@ local function buildPrompt(curtain, parent)
 	prompt.ClickablePrompt = DoorConfig.PromptClickable
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = DoorConfig.PromptDistance
-	prompt.RequiresLineOfSight = false
 	prompt.Parent = parent
 
 	prompt.Triggered:Connect(function()

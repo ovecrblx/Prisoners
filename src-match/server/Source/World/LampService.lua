@@ -20,7 +20,6 @@ local function buildPrompt(entry, parent)
 	prompt.ClickablePrompt = LampConfig.PromptClickable
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = LampConfig.PromptDistance
-	prompt.RequiresLineOfSight = false
 	prompt.Parent = parent
 
 	prompt.Triggered:Connect(function()

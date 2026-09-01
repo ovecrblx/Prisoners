@@ -1744,7 +1744,6 @@ local function ensurePrompt(screen)
 	created.ClickablePrompt = DoorConfig.PromptClickable
 	created.HoldDuration = 0
 	created.MaxActivationDistance = DoorConfig.PromptDistance
-	created.RequiresLineOfSight = false
 	created.Parent = screen
 	return created
 end
