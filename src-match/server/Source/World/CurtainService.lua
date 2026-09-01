@@ -1,6 +1,8 @@
 -- Estado das cortinas de metal de workspace.Siland_Home.Doors. O servidor só sabe se estão
--- fechadas: publica no atributo do Model e cria o ProximityPrompt na alavanca. Animar a
--- alavanca, a luz e o estiramento das cortinas é do cliente.
+-- fechadas: publica no atributo da alavanca e cria o ProximityPrompt nela. Animar a alavanca, a
+-- luz e o estiramento das cortinas é do cliente.
+-- Uma alavanca por linha de CurtainLevers, cada uma com o próprio estado: o Model tem mais de uma,
+-- e o atributo no Model faria as duas dividirem o mesmo aberto/fechado.
 local CurtainService = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,28 +27,33 @@ local function buildPrompt(curtain, parent)
 
 		curtain.readyAt = os.clock() + curtain.cycle
 		curtain.closed = not curtain.closed
-		curtain.model:SetAttribute(DoorConfig.ClosedAttribute, curtain.closed)
+		curtain.lever:SetAttribute(DoorConfig.ClosedAttribute, curtain.closed)
 	end)
 end
 
 local function register(model)
-	local lever = model:FindFirstChild(DoorConfig.LeverName)
-	if not (lever and lever:IsA("BasePart")) then
-		warn("[CurtainService] " .. model:GetFullName() .. " sem " .. DoorConfig.LeverName .. "; ignorada.")
-		return
+	local built = 0
+
+	for _, spec in ipairs(DoorConfig.CurtainLevers) do
+		local rig = DoorConfig.CurtainRig(model, spec)
+		if rig then
+			local span = math.max(#rig.bars - 1, 0) * DoorConfig.CurtainStagger
+			local curtain = {
+				lever = rig.lever,
+				closed = false,
+				readyAt = 0,
+				cycle = math.max(DoorConfig.CurtainCloseTime, DoorConfig.CurtainOpenTime) + span,
+			}
+
+			rig.lever:SetAttribute(DoorConfig.ClosedAttribute, false)
+			buildPrompt(curtain, rig.lever)
+			built += 1
+		end
 	end
 
-	local span = math.max(#DoorConfig.Curtains(model) - 1, 0) * DoorConfig.CurtainStagger
-
-	local curtain = {
-		model = model,
-		closed = false,
-		readyAt = 0,
-		cycle = math.max(DoorConfig.CurtainCloseTime, DoorConfig.CurtainOpenTime) + span,
-	}
-
-	model:SetAttribute(DoorConfig.ClosedAttribute, false)
-	buildPrompt(curtain, lever)
+	if built == 0 then
+		warn("[CurtainService] " .. model:GetFullName() .. " sem alavanca completa; ignorada.")
+	end
 end
 
 function CurtainService.Start()

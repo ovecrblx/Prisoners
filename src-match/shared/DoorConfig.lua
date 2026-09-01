@@ -12,12 +12,17 @@ DoorConfig.KnobName = "Animate"
 DoorConfig.BlockName = "Collide"
 DoorConfig.DualPrefix = "Dual_Door"
 
--- Cortina de metal: as folhas não giram, esticam para baixo. `Right Root` é a alavanca que
--- as aciona, e as outras `<Lado> Root` do Model são as cortinas.
+-- Cortina de metal: as folhas não giram, esticam para baixo. Cada alavanca do Model traz o
+-- indicador dela e as cortinas que move, e tem estado próprio — o atributo é escrito NA ALAVANCA,
+-- não no Model, senão as duas dividiriam o mesmo aberto/fechado.
+-- Cortina fora de toda lista fica parada, e alavanca sem as peças dela sai de cena sem levar as
+-- outras junto.
 DoorConfig.CurtainPrefix = "Curtain"
-DoorConfig.LeverName = "Right Root"
-DoorConfig.IndicatorName = "Indicator"
 DoorConfig.ClosedAttribute = "Closed"
+DoorConfig.CurtainLevers = {
+	{ lever = "Right Root", indicator = "Indicator", bars = { "Center Root" } },
+	{ lever = "Back Root", indicator = "Indicator_2", bars = { "Left Root" } },
+}
 
 -- Estado publicado pelo servidor: módulo do ângulo com o sinal do lado de quem abriu, 0
 -- fechada. Cada folha deriva o próprio sinal, então porta dupla cabe numa escrita só.
@@ -152,18 +157,30 @@ function DoorConfig.LeafSign(hinge, normal)
 	return Vector3.new(0, 1, 0):Cross(arm):Dot(normal) >= 0 and -1 or 1
 end
 
--- Cortinas do Model: as folhas que não são a alavanca. Ordem vem de Hinges, então o stagger
--- cai sempre na mesma sequência.
-function DoorConfig.Curtains(model)
-	local parts = {}
-
-	for _, part in ipairs(DoorConfig.Hinges(model)) do
-		if part.Name ~= DoorConfig.LeverName then
-			parts[#parts + 1] = part
-		end
+-- As peças de uma alavanca, ou nada quando falta a alavanca ou alguma cortina dela. A ordem das
+-- cortinas é a da lista, então o stagger cai sempre na mesma sequência. Indicador é opcional.
+function DoorConfig.CurtainRig(model, spec)
+	local lever = model:FindFirstChild(spec.lever)
+	if not (lever and lever:IsA("BasePart")) then
+		return nil
 	end
 
-	return parts
+	local bars = {}
+	for _, name in ipairs(spec.bars) do
+		local bar = model:FindFirstChild(name)
+		if not (bar and bar:IsA("BasePart")) then
+			return nil
+		end
+		bars[#bars + 1] = bar
+	end
+
+	local indicator = spec.indicator and model:FindFirstChild(spec.indicator)
+
+	return {
+		lever = lever,
+		indicator = if indicator and indicator:IsA("BasePart") then indicator else nil,
+		bars = bars,
+	}
 end
 
 function DoorConfig.LeverPose(rest, degrees)

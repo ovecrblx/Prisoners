@@ -1,5 +1,7 @@
 -- Animação das cortinas de metal, local em cada cliente. O servidor só publica se estão
 -- fechadas; a alavanca, a luz e o estiramento das barras são calculados aqui.
+-- Uma animação por alavanca de CurtainLevers, com as cortinas daquela linha: o Model tem mais de
+-- uma, e cada uma abre e fecha por conta própria. O estado vem do atributo da ALAVANCA.
 local CurtainController = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,6 +15,7 @@ local curtains = {}
 local active = {}
 local stepConnection
 local step
+local setState
 
 -- Size cresce a partir do centro, então esticar sozinho subiria a barra junto. Compensar
 -- metade do crescimento no CFrame prende o topo e joga tudo para baixo. A conta sai sempre da
@@ -54,16 +57,18 @@ end
 
 -- As barras só se esticam aqui, então o servidor sempre as devolve recolhidas: o que o
 -- streaming trouxer de volta serve de pose de referência.
+-- Alavanca nova é peça nova, e a escuta do atributo vai junto: sem trocar, a animação ficaria presa
+-- ao exemplar que o streaming levou.
 local function resolve(entry)
-	local lever = entry.model:FindFirstChild(DoorConfig.LeverName)
-	local parts = DoorConfig.Curtains(entry.model)
+	local rig = DoorConfig.CurtainRig(entry.model, entry.spec)
 
-	if not (lever and lever:IsA("BasePart")) or #parts == 0 then
+	if not rig then
 		entry.bars = nil
 		return false
 	end
 
-	if entry.lever == lever and sameBars(entry, parts) then
+	local lever = rig.lever
+	if entry.lever == lever and sameBars(entry, rig.bars) then
 		return true
 	end
 
@@ -71,12 +76,19 @@ local function resolve(entry)
 	entry.lever = lever
 	entry.off = DoorConfig.LeverPose(rest, DoorConfig.LeverOffAngle)
 	entry.on = DoorConfig.LeverPose(rest, DoorConfig.LeverOnAngle)
-	entry.indicator = entry.model:FindFirstChild(DoorConfig.IndicatorName)
+	entry.indicator = rig.indicator
 	entry.throw = 0
 	entry.light = 0
 
+	if entry.link then
+		entry.link:Disconnect()
+	end
+	entry.link = lever:GetAttributeChangedSignal(DoorConfig.ClosedAttribute):Connect(function()
+		setState(entry, lever:GetAttribute(DoorConfig.ClosedAttribute) == true, true)
+	end)
+
 	local bars = {}
-	for index, part in ipairs(parts) do
+	for index, part in ipairs(rig.bars) do
 		bars[index] = {
 			part = part,
 			base = part.CFrame,
@@ -133,7 +145,7 @@ local function play(entry)
 
 	-- Depois de `entry.total` fechar, que é a duração REAL do movimento: o escalonamento das barras
 	-- estica o curso além do tempo de uma barra só.
-	-- Dois sons, um por evento. A alavanca estala na `Right Root`, onde o jogador interage, no ritmo
+	-- Dois sons, um por evento. A alavanca estala na peça dela, onde o jogador interage, no ritmo
 	-- autorado — é impacto, não curso. A cortina sai da primeira barra e é esticada para caber no
 	-- movimento. Fechar é descer, abrir é subir.
 	local closing = entry.closed
@@ -176,7 +188,7 @@ function step(delta)
 	end
 end
 
-local function setState(entry, closed, animate)
+function setState(entry, closed, animate)
 	entry.closed = closed
 
 	if not resolve(entry) then
@@ -190,43 +202,53 @@ local function setState(entry, closed, animate)
 	end
 end
 
+-- Lido da alavanca a cada vez: com streaming a peça pode não existir ainda, e o que ela traz de
+-- volta é o estado do servidor, não o que ficou guardado aqui.
+local function published(entry)
+	local lever = entry.model:FindFirstChild(entry.spec.lever)
+	return lever ~= nil and lever:GetAttribute(DoorConfig.ClosedAttribute) == true
+end
+
 local function register(model)
 	if curtains[model] then
 		return
 	end
 
-	local entry = {
-		model = model,
-		closed = model:GetAttribute(DoorConfig.ClosedAttribute) == true,
-		throw = 0,
-		throwFrom = 0,
-		light = 0,
-		lightFrom = 0,
-		goal = 0,
-		elapsed = 0,
-		total = 0,
-		duration = DoorConfig.CurtainOpenTime,
-		style = DoorConfig.CurtainOpenStyle,
-		direction = DoorConfig.CurtainOpenDirection,
-	}
+	local record = { entries = {} }
+	curtains[model] = record
 
-	curtains[model] = entry
+	for _, spec in ipairs(DoorConfig.CurtainLevers) do
+		table.insert(record.entries, {
+			model = model,
+			spec = spec,
+			closed = false,
+			throw = 0,
+			throwFrom = 0,
+			light = 0,
+			lightFrom = 0,
+			goal = 0,
+			elapsed = 0,
+			total = 0,
+			duration = DoorConfig.CurtainOpenTime,
+			style = DoorConfig.CurtainOpenStyle,
+			direction = DoorConfig.CurtainOpenDirection,
+		})
+	end
 
-	-- Guardadas para o ChildRemoved soltar: modelo que sai e volta re-registra, e a conexão antiga
+	-- Guardada para o ChildRemoved soltar: modelo que sai e volta re-registra, e a conexão antiga
 	-- duplicaria o setState a cada ciclo de streaming.
-	entry.links = {
-		model:GetAttributeChangedSignal(DoorConfig.ClosedAttribute):Connect(function()
-			setState(entry, model:GetAttribute(DoorConfig.ClosedAttribute) == true, true)
-		end),
-		-- Com streaming as peças podem chegar depois do Model.
-		model.ChildAdded:Connect(function(child)
-			if child:IsA("BasePart") then
-				setState(entry, entry.closed, false)
+	-- Com streaming as peças podem chegar depois do Model.
+	record.link = model.ChildAdded:Connect(function(child)
+		if child:IsA("BasePart") then
+			for _, entry in ipairs(record.entries) do
+				setState(entry, published(entry), false)
 			end
-		end),
-	}
+		end
+	end)
 
-	setState(entry, entry.closed, false)
+	for _, entry in ipairs(record.entries) do
+		setState(entry, published(entry), false)
+	end
 end
 
 function CurtainController.Start()
@@ -249,12 +271,15 @@ function CurtainController.Start()
 	folder.ChildAdded:Connect(consider)
 
 	folder.ChildRemoved:Connect(function(child)
-		local entry = curtains[child]
-		if entry then
-			for _, link in ipairs(entry.links) do
-				link:Disconnect()
+		local record = curtains[child]
+		if record then
+			record.link:Disconnect()
+			for _, entry in ipairs(record.entries) do
+				if entry.link then
+					entry.link:Disconnect()
+				end
+				active[entry] = nil
 			end
-			active[entry] = nil
 			curtains[child] = nil
 		end
 	end)
