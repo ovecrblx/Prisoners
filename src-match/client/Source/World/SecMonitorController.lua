@@ -17,6 +17,7 @@ local DoorConfig = require(Shared:WaitForChild("DoorConfig"))
 -- é como os dois lados divergem em silêncio.
 local NpcConfig = require(Shared:WaitForChild("NpcConfig"))
 -- Só pelo contrato da lâmpada: o nome do atributo mora no módulo que o publica.
+local HighlightGate = require(script.Parent:WaitForChild("HighlightGate"))
 local SecCamController = require(script.Parent:WaitForChild("SecCamController"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
@@ -1406,11 +1407,16 @@ local function operating()
 end
 
 -- O posto é o ASSENTO, não o prompt: sentar por conta própria vale exatamente o mesmo gesto.
+-- Os contornos saem do assento, não da sessão do posto: eles some com o corpo sentado mesmo que o
+-- monitor ainda não tenha chegado pelo streaming.
 evaluate = function()
+	local atPost = operating()
+	HighlightGate.Suppress(atPost)
+
 	if not boundMonitor then
 		return
 	end
-	if operating() then
+	if atPost then
 		activate()
 	else
 		deactivate()
