@@ -3,9 +3,11 @@
 local PlayerData = {}
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+local ClassConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ClassConfig"))
 local ProfileStore = require(ServerScriptService:WaitForChild("Packages"):WaitForChild("ProfileStore"))
 
 local Store
@@ -43,6 +45,23 @@ local function ownsClass(data, classId)
 	return false
 end
 
+-- Concessão da classe padrão, no load do perfil. Quem já a tem não recebe de novo, e quem já tem
+-- outra equipada fica com a dele: o padrão só preenche o vazio.
+local function grantDefaultClass(data)
+	local entry = ClassConfig.Default()
+	if not entry then
+		return
+	end
+
+	if not ownsClass(data, entry.Id) then
+		table.insert(data.Classes, entry.Id)
+	end
+
+	if data.EquippedClass == "" then
+		data.EquippedClass = entry.Id
+	end
+end
+
 local function isSafeNumber(value)
 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
@@ -77,6 +96,7 @@ local function onPlayerAdded(player)
 		profile.Data.FirstJoin = now
 	end
 	profile.Data.LastSeen = now
+	grantDefaultClass(profile.Data)
 
 	Profiles[player] = profile
 	publish(player, profile)

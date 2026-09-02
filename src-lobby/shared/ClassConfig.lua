@@ -12,6 +12,10 @@ ClassConfig.List = {
 	{ Id = "medic_class", Title = "Medic", Icon = "rbxassetid://139845748242300", Price = 29, ProductId = 0 },
 }
 
+-- Classe que todo perfil recebe no load e que entra equipada quando nada está: profissão é
+-- requisito para o Tp, então ninguém fica sem uma. Tem de ser um Id da lista acima.
+ClassConfig.DefaultId = "guard_class"
+
 ClassConfig.ById = {}
 
 for order, entry in ipairs(ClassConfig.List) do
@@ -25,7 +29,7 @@ function ClassConfig.Get(id)
 end
 
 function ClassConfig.Default()
-	return ClassConfig.List[1]
+	return ClassConfig.ById[ClassConfig.DefaultId] or ClassConfig.List[1]
 end
 
 return ClassConfig
