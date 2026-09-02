@@ -103,6 +103,22 @@ function PlayerData.AddShifts(player, amount)
 	return true
 end
 
+-- Recorde de turnos numa partida. Só sobe: valor igual ou menor que o guardado não escreve, e o
+-- retorno diz se mudou — é ele que decide se vale gravar.
+function PlayerData.RaiseBestShifts(player, value)
+	if not isSafeNumber(value) or value <= 0 then
+		return false
+	end
+
+	local profile = Profiles[player]
+	if not profile or (profile.Data.BestShifts or 0) >= value then
+		return false
+	end
+
+	profile.Data.BestShifts = value
+	return true
+end
+
 function PlayerData.AddDima(player, amount)
 	if not isSafeNumber(amount) then
 		warn("[PlayerData] AddDima recusado: valor inválido (" .. tostring(amount) .. ")")

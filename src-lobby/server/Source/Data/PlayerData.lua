@@ -20,6 +20,7 @@ local STORE_NAME = RunService:IsStudio() and "ALT_Data_Prisoners" or "Data_Priso
 local TEMPLATE = {
 	Dima = 0,
 	Shifts = 0,
+	BestShifts = 0,
 	FirstJoin = 0,
 	LastSeen = 0,
 	Classes = {},
