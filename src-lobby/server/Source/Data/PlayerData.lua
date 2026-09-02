@@ -179,13 +179,17 @@ function PlayerData.AddClass(player, classId)
 	return true
 end
 
--- String vazia desequipa. Classe não possuída é recusada.
+-- String vazia desequipa. Classe não possuída é recusada, e trocar pelo que já está equipado
+-- devolve false: o retorno é o que decide gravar, e reescrever o mesmo valor é escrita à toa.
 function PlayerData.SetEquippedClass(player, classId)
 	local profile = Profiles[player]
 	if not profile or type(classId) ~= "string" then
 		return false
 	end
 	if classId ~= "" and not ownsClass(profile.Data, classId) then
+		return false
+	end
+	if profile.Data.EquippedClass == classId then
 		return false
 	end
 

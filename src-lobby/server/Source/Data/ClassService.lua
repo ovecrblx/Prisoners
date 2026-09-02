@@ -18,6 +18,8 @@ local DEBOUNCE = 0.3
 local ActionEvent
 local lastAction = setmetatable({}, { __mode = "k" })
 
+-- Compra equipa se o jogador ainda estava na classe padrão: ela é o preenchimento de quem não
+-- escolheu, e comprar é escolher. Quem já tinha trocado para outra fica com a dele.
 local function buy(player, entry)
 	if PlayerData.OwnsClass(player, entry.Id) then
 		return
@@ -28,7 +30,8 @@ local function buy(player, entry)
 
 	PlayerData.AddClass(player, entry.Id)
 
-	if PlayerData.GetEquippedClass(player) == "" then
+	local equipped = PlayerData.GetEquippedClass(player)
+	if equipped == "" or equipped == ClassConfig.DefaultId then
 		PlayerData.SetEquippedClass(player, entry.Id)
 	end
 
@@ -46,10 +49,12 @@ local function onAction(player, action, classId)
 	end
 	lastAction[player] = now
 
+	-- Desequipar volta para a classe padrão, não para vazio: profissão é requisito do Tp, e ninguém
+	-- pode ficar sem uma. Sem gravação: equipar é escolha barata, e o auto-save do ProfileStore mais
+	-- o EndSession já a levam — gravar por clique põe um UpdateAsync a cada 0.3s no orçamento do
+	-- servidor inteiro. Compra continua gravando na hora, porque ali houve cobrança.
 	if action == "Unequip" then
-		if PlayerData.SetEquippedClass(player, "") then
-			PlayerData.Flush(player)
-		end
+		PlayerData.SetEquippedClass(player, ClassConfig.DefaultId)
 		return
 	end
 
@@ -61,9 +66,7 @@ local function onAction(player, action, classId)
 	if action == "Buy" then
 		buy(player, entry)
 	elseif action == "Equip" then
-		if PlayerData.SetEquippedClass(player, entry.Id) then
-			PlayerData.Flush(player)
-		end
+		PlayerData.SetEquippedClass(player, entry.Id)
 	end
 end
 
