@@ -155,12 +155,15 @@ local function clearReadout()
 	end
 end
 
+-- Fora do workspace de propósito: só o que desce dele é desenhado e simulado, e acessório guardado
+-- não é nem um nem outro. No mundo, o Handle solto vira assembly acordada e continua na tela.
 local function tempFolder()
-	local folder = workspace:FindFirstChild(ManualConfig.TempFolderName)
+	local home = player:FindFirstChildOfClass("PlayerScripts") or player
+	local folder = home:FindFirstChild(ManualConfig.TempFolderName)
 	if not folder then
 		folder = Instance.new("Folder")
 		folder.Name = ManualConfig.TempFolderName
-		folder.Parent = workspace
+		folder.Parent = home
 	end
 	return folder
 end
@@ -203,11 +206,19 @@ local function hideAccessories()
 	end
 end
 
+-- AddAccessory e não reparent: sair do personagem destrói a junta, e é o Humanoid quem a refaz. A
+-- doc não descreve o mecanismo, e neste projeto o runtime já mostrou criar AccessoryRigidConstraint
+-- em R15 onde a página fala em Weld.
 local function restoreAccessories()
 	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	for _, accessory in ipairs(hiddenAccessories) do
 		if character and accessory.Parent ~= nil then
-			accessory.Parent = character
+			if humanoid then
+				humanoid:AddAccessory(accessory)
+			else
+				accessory.Parent = character
+			end
 		end
 	end
 	table.clear(hiddenAccessories)

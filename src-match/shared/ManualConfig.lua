@@ -71,7 +71,7 @@ ManualConfig.OpenDelay = 0.5 -- capa abre depois deste atraso
 ManualConfig.RaycastRange = 20 -- studs; alcance do clique nas hitboxes
 
 -- O que sai da frente enquanto o livro está aberto: a cabeça fica invisível e os acessórios vão
--- para esta pasta. Nome da parte e nome da pasta, os dois no personagem de quem lê.
+-- para esta pasta, que mora em PlayerScripts, fora do workspace. Só na tela de quem lê.
 ManualConfig.HeadPartName = "Head"
 ManualConfig.TempFolderName = "Temp"
 
