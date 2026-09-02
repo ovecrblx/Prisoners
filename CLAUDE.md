@@ -12,6 +12,16 @@ arquitetura. As três passam no lint e no build; só aparecem em runtime ou em e
 
 Vale também para biblioteca de terceiros: verificar o estado atual antes de vendorizar.
 
+**Toda entrega fecha com o contraponto.** Não basta a API existir. Dizer se é a corrente ou a
+substituída (`ReserveServer` -> `ReserveServerAsync`, `LoadAnimation` no `Humanoid` -> no
+`Animator`, ProfileService -> ProfileStore), e comparar o que o código faz com a orientação de
+performance da própria Roblox, citando a linha que sustenta. Divergiu, justificar; sem justificativa,
+mudar o código.
+
+Página de referência sem descrição é comum — aconteceu com `SpringConstraint.Coils`,
+`Constraint.Visible` e pai `nil` em `Instance`. Aí dizer que não está documentado e medir no
+runtime, nunca preencher de memória.
+
 **A doc atrasa em mudança recente de engine.** Já aconteceu neste projeto: a página do `Humanoid`
 diz que `AddAccessory` conecta o Handle "using a Weld", e em R15 o runtime cria
 `AccessoryRigidConstraint`. Quando doc e comportamento observado divergem, quem manda é o runtime.
