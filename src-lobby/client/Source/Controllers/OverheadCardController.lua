@@ -32,7 +32,73 @@ local function faceCamera(weld, head, cameraPosition)
 	weld.C0 = target:Inverse() * headCF * c1
 end
 
+-- Peças do cartão resolvidas uma vez por personagem, não por quadro: o laço de render rodava quatro
+-- FindFirstChild por jogador a 60 fps só para reencontrar as mesmas instâncias.
+local tracked = {}
+local watching = {}
+
+local function resolve(player, character)
+	local accessory = character:FindFirstChild(Config.AccessoryName)
+	local handle = accessory and accessory:FindFirstChild(Config.HandleName)
+	local head = character:FindFirstChild("Head")
+	local weld = handle and handle:FindFirstChild(Config.WeldName)
+
+	if handle and head and weld and weld:IsA("Weld") then
+		tracked[player] = { handle = handle, head = head, weld = weld }
+		return true
+	end
+	return false
+end
+
+-- O cartão nasce em outra thread, no servidor, e a solda vem depois dele. DescendantAdded espera as
+-- duas chegarem e sai de cena assim que o par fecha.
+local function watch(player, character)
+	tracked[player] = nil
+	local previous = watching[player]
+	if previous then
+		previous:Disconnect()
+		watching[player] = nil
+	end
+
+	if resolve(player, character) then
+		return
+	end
+
+	watching[player] = character.DescendantAdded:Connect(function()
+		if resolve(player, character) then
+			local link = watching[player]
+			if link then
+				link:Disconnect()
+				watching[player] = nil
+			end
+		end
+	end)
+end
+
+local function follow(player)
+	if player.Character then
+		watch(player, player.Character)
+	end
+	player.CharacterAdded:Connect(function(character)
+		watch(player, character)
+	end)
+end
+
 function OverheadCardController.Start()
+	for _, player in ipairs(Players:GetPlayers()) do
+		follow(player)
+	end
+	Players.PlayerAdded:Connect(follow)
+
+	Players.PlayerRemoving:Connect(function(player)
+		tracked[player] = nil
+		local link = watching[player]
+		if link then
+			link:Disconnect()
+			watching[player] = nil
+		end
+	end)
+
 	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
 		if not camera then
@@ -41,19 +107,13 @@ function OverheadCardController.Start()
 
 		local cameraPosition = camera.CFrame.Position
 
-		for _, player in ipairs(Players:GetPlayers()) do
-			local character = player.Character
-			local accessory = character and character:FindFirstChild(Config.AccessoryName)
-			local handle = accessory and accessory:FindFirstChild(Config.HandleName)
-			local head = character and character:FindFirstChild("Head")
-
-			if handle and head then
-				local delta = handle.Position - cameraPosition
+		for player, entry in pairs(tracked) do
+			if entry.weld.Parent == nil or entry.head.Parent == nil then
+				tracked[player] = nil
+			else
+				local delta = entry.handle.Position - cameraPosition
 				if delta:Dot(delta) <= RADIUS_SQ then
-					local weld = handle:FindFirstChild(Config.WeldName)
-					if weld and weld:IsA("Weld") then
-						faceCamera(weld, head, cameraPosition)
-					end
+					faceCamera(entry.weld, entry.head, cameraPosition)
 				end
 			end
 		end

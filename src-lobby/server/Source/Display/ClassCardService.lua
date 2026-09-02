@@ -15,11 +15,8 @@ local EQUIPPED_ATTRIBUTE = "EquippedClass"
 local LEADERBOARD_PAIR_SIZE = UDim2.new(1, 0, 0.25, 0)
 local LEADERBOARD_ALONE_SIZE = UDim2.new(1, 0, 0.5, 0)
 
--- O cartão nasce em outra thread (AddAccessory no OverheadCardService).
-local POLL_INTERVAL = 0.2
-local POLL_TIMEOUT = 10
-
 local warnedLayout = false
+local watching = {}
 
 local function apply(player)
 	local character = player.Character
@@ -58,18 +55,33 @@ local function apply(player)
 	return true
 end
 
+-- O cartão nasce em outra thread (AddAccessory no OverheadCardService), então a primeira tentativa
+-- costuma falhar. Espera pelo evento em vez de sondar: DescendantAdded avisa quando o cartão entra,
+-- e a conexão cai assim que ele é preenchido.
 local function applyWhenReady(player)
-	local deadline = os.clock() + POLL_TIMEOUT
-
-	while os.clock() < deadline do
-		if not player:IsDescendantOf(Players) then
-			return
-		end
-		if apply(player) then
-			return
-		end
-		task.wait(POLL_INTERVAL)
+	if apply(player) then
+		return
 	end
+
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local previous = watching[player]
+	if previous then
+		previous:Disconnect()
+	end
+
+	watching[player] = character.DescendantAdded:Connect(function()
+		if apply(player) then
+			local link = watching[player]
+			if link then
+				link:Disconnect()
+				watching[player] = nil
+			end
+		end
+	end)
 end
 
 function ClassCardService.Start()
@@ -88,6 +100,14 @@ function ClassCardService.Start()
 	end
 
 	Players.PlayerAdded:Connect(track)
+
+	Players.PlayerRemoving:Connect(function(player)
+		local link = watching[player]
+		if link then
+			link:Disconnect()
+			watching[player] = nil
+		end
+	end)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		track(player)

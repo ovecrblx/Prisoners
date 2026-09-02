@@ -5,6 +5,7 @@
 local ItemPickup = {}
 ItemPickup.__index = ItemPickup
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ItemView = require(script.Parent:WaitForChild("ItemView"))
@@ -84,6 +85,9 @@ function ItemPickup:SetHighlight(on)
 	highlight.FillTransparency = TaskConfig.HighlightFillTransparency
 	highlight.OutlineColor = TaskConfig.HighlightOutlineColor
 	highlight.OutlineTransparency = TaskConfig.HighlightOutlineTransparency
+	-- Marca antes de entrar no mundo: o HighlightGate escuta a tag, e contorno que nasce sem ela
+	-- fica de fora do apagamento em bloco.
+	CollectionService:AddTag(highlight, TaskConfig.HighlightTag)
 	highlight.Parent = handle
 end
 

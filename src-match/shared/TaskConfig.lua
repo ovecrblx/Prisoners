@@ -43,6 +43,10 @@ TaskConfig.HighlightOutlineColor = Color3.fromRGB(255, 240, 194)
 TaskConfig.HighlightOutlineTransparency = 0
 TaskConfig.HighlightDepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 
+-- Tag do CollectionService que registra os contornos do mundo. Quem criar um Highlight tem de
+-- marcá-lo: é por esta lista que o HighlightGate apaga tudo de uma vez, sem varrer o workspace.
+TaskConfig.HighlightTag = "WorldHighlight"
+
 -- Highlight.ItemId aponta o exemplar de coleta daquele item, que é quem o cliente contorna
 -- enquanto a task estiver ativa.
 TaskConfig.List = {

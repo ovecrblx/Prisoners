@@ -32,7 +32,7 @@ local PITCH_LIMIT = math.rad(85)
 local REACQUIRE_INTERVAL = 2
 
 -- Pastas de desenho que nunca empurram a câmera: marcador de diagnóstico não é mundo.
-local IGNORED_FOLDERS = { NpcConfig.NODE_FOLDER_NAME, "Temp" }
+local IGNORED_FOLDERS = { NpcConfig.NODE_FOLDER_NAME }
 
 local RENDER_BIND = "FlyCamRender"
 
