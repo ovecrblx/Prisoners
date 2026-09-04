@@ -16,6 +16,27 @@ local prompt
 local user
 local links = {}
 
+-- Posse da corda vai para quem atendeu: cliente simula o que possui, e é a tela dele que tem o fone
+-- no rosto. Ancorado não muda de dono, então elo travado sai fora sem derrubar os outros.
+local function ownCord(player)
+	for _, child in ipairs(model:GetChildren()) do
+		if child:IsA("BasePart") and not child.Anchored
+			and string.sub(child.Name, 1, #PhoneConfig.LinkPrefix) == PhoneConfig.LinkPrefix
+		then
+			local ok, err = pcall(function()
+				if player then
+					child:SetNetworkOwner(player)
+				else
+					child:SetNetworkOwnershipAuto()
+				end
+			end)
+			if not ok then
+				warn("[PhoneService] posse do cabo recusada em " .. child.Name .. ": " .. tostring(err))
+			end
+		end
+	end
+end
+
 local function publish(player)
 	user = player
 	model:SetAttribute(PhoneConfig.UserAttribute, if player then player.UserId else 0)
@@ -35,6 +56,7 @@ local function release(player)
 	end
 	table.clear(links)
 	publish(nil)
+	ownCord(nil)
 end
 
 local function answer(player)
@@ -49,6 +71,7 @@ local function answer(player)
 	end
 
 	publish(player)
+	ownCord(player)
 	table.insert(links, humanoid.Died:Connect(function()
 		release(player)
 	end))

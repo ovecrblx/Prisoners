@@ -31,6 +31,15 @@ PhoneConfig.PromptClickable = false
 PhoneConfig.HandsetOffset = Vector3.new(-0.95, 0.09, -1.3)
 PhoneConfig.HandsetAngles = Vector3.new(60, 45, 180)
 
+-- Percurso do fone até o rosto, em 1/s. Não é enfeite: o cabo é uma corrente de RopeConstraint
+-- presa nele, e ponta ancorada que salta dá tranco na corda. Na volta o salto é seguro — rope só
+-- puxa ao separar, e voltar ao gancho afrouxa.
+PhoneConfig.HandsetSmoothing = 8
+
+-- Prefixo dos elos soltos do cabo. Quem está na linha simula a corda: o fone só sobe ao rosto na
+-- tela de cada cliente, e quem não simula contra o próprio fone veria o cabo ignorando o aparelho.
+PhoneConfig.LinkPrefix = "Cord_Link"
+
 -- Vista de quem atende, solta no mundo: posição em studs e ângulos em graus, ordem Y-X-Z igual ao
 -- campo Orientation do Studio. Nasce em cima do teclado olhando para baixo — X é o pitch, e -90 é a
 -- vertical. Não segue o jogador: é enquadramento fixo, e o telefone não anda.

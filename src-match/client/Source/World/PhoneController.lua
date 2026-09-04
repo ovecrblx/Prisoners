@@ -33,6 +33,7 @@ local hangUpRemote
 local links = {}
 local render
 local mine = false
+local pose
 local cameraMode = Enum.CameraMode.Classic
 local token = 0
 
@@ -51,6 +52,7 @@ local function stop()
 	end
 	table.clear(links)
 
+	pose = nil
 	if handset and handset.Parent and home then
 		handset.CFrame = home
 	end
@@ -155,7 +157,9 @@ local function begin(userId)
 		if mine then
 			aim(delta)
 		end
-		part.CFrame = PhoneConfig.Pose(anchorOf(face))
+		local target = PhoneConfig.Pose(anchorOf(face))
+		pose = (pose or part.CFrame):Lerp(target, 1 - math.exp(-PhoneConfig.HandsetSmoothing * delta))
+		part.CFrame = pose
 	end)
 
 	if who ~= player then
