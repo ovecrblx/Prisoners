@@ -77,13 +77,21 @@ function Pointer.Show()
 
 	local mouse = Players.LocalPlayer:GetMouse()
 	local function follow()
-		cursorPointer.Position = UDim2.fromOffset(mouse.X, mouse.Y)
+		if cursorPointer then
+			cursorPointer.Position = UDim2.fromOffset(mouse.X, mouse.Y)
+		end
 	end
 
 	follow()
 	cursorGui.Enabled = true
 	UserInputService.MouseIconEnabled = false
 
+	-- Uma escuta por vez. `Hover` chama `Show` a cada MouseEnter, e `Hide` só solta a que está
+	-- guardada: sem soltar a anterior aqui, ela sobrevive ao `Drop` e escreve num ponteiro destruído,
+	-- um erro por movimento de mouse até o fim da partida.
+	if cursorMove then
+		cursorMove:Disconnect()
+	end
 	cursorMove = mouse.Move:Connect(follow)
 end
 
