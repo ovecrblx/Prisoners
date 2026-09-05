@@ -318,13 +318,14 @@ end
 -- ====================================================================================== MIRA
 
 -- Mouse pelo UnitRay do engine: GetMouseLocation já vem em viewport, subtrair GuiInset dá 2.9° de erro.
+-- Toque pelo ScreenPointToRay: InputObject.Position já desconta o inset, e ViewportPointToRay não.
 local function aimRay(input: InputObject?): Ray?
 	local camera = Workspace.CurrentCamera
 	if not camera then
 		return nil
 	end
 	if input and input.UserInputType == Enum.UserInputType.Touch then
-		return camera:ViewportPointToRay(input.Position.X, input.Position.Y)
+		return camera:ScreenPointToRay(input.Position.X, input.Position.Y)
 	end
 	return player:GetMouse().UnitRay
 end
