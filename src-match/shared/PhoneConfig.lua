@@ -72,6 +72,11 @@ PhoneConfig.SeatWait = 12
 
 -- Chave de Sfx por rótulo de tecla. Tecla fora daqui não soa e não digita; só as de dígito entram
 -- no número.
+-- Tecla física de desligar, publicada no teclado junto com as de dígito. Não digita e não tem tom:
+-- o que ela faz é sair da linha.
+PhoneConfig.QuitName = "Quit"
+PhoneConfig.QuitSound = "PhoneQuit"
+
 PhoneConfig.KeySounds = {
 	["0"] = "PhoneKey0",
 	["1"] = "PhoneKey1",

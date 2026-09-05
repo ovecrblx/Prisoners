@@ -273,7 +273,7 @@ local function begin(userId, loud)
 	PhoneDial.Open(model, PhoneConfig.Callers[origin], function(active)
 		wide = active
 		PhoneCord.Phase(if active then "Call" else "Keypad")
-	end)
+	end, hangUp)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then

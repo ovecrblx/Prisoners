@@ -29,6 +29,7 @@ local tweens = {}
 local screen
 local label
 local framing
+local quitting
 local labelHome
 local calling
 local waiting
@@ -253,6 +254,15 @@ local function press(part, glyph)
 		tweens[part] = sink
 		sink:Play()
 	end
+
+	if glyph == PhoneConfig.QuitName then
+		Sfx.Play(PhoneConfig.QuitSound, part)
+		if quitting then
+			quitting()
+		end
+		return
+	end
+
 	Sfx.Play(PhoneConfig.KeySounds[glyph], part)
 
 	if not (typing and string.match(glyph, "^%d$")) or #digits >= PhoneConfig.Digits then
@@ -269,7 +279,7 @@ end
 local function bindPad(pad)
 	for _, part in ipairs(pad:GetChildren()) do
 		local button = part:IsA("BasePart") and part:FindFirstChildWhichIsA("GuiButton", true)
-		if button and PhoneConfig.KeySounds[part.Name] then
+		if button and (PhoneConfig.KeySounds[part.Name] or part.Name == PhoneConfig.QuitName) then
 			local glyph = part.Name
 			homes[part] = part.CFrame
 			queries[part] = part.CanQuery
@@ -283,7 +293,7 @@ local function bindPad(pad)
 	end
 end
 
-function PhoneDial.Open(model, caller, onFrame)
+function PhoneDial.Open(model, caller, onFrame, onQuit)
 	PhoneDial.Close()
 
 	local pad = PhoneConfig.Child(model, PhoneConfig.PadName)
@@ -301,6 +311,7 @@ function PhoneDial.Open(model, caller, onFrame)
 	digits = ""
 	touched = false
 	framing = onFrame
+	quitting = onQuit
 	bindPad(pad)
 
 	local mark = token
@@ -320,6 +331,7 @@ function PhoneDial.Close()
 	typing = false
 	touched = false
 	framing = nil
+	quitting = nil
 	hush()
 
 	silence()

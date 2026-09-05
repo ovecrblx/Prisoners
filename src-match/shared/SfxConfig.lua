@@ -128,6 +128,11 @@ local SfxConfig = {
 	PhoneKey0 = { Id = 9113742812, Volume = 1.2, Speed = 0.82, Range = 15, Region = NumberRange.new(0.085, 1) },
 	PhoneKeyStar = { Id = 9113742812, Volume = 1.2, Speed = 1.27, Range = 15, Region = NumberRange.new(0.085, 1) },
 	PhoneKeyHash = { Id = 9113742812, Volume = 1.2, Speed = 0.66, Range = 15, Region = NumberRange.new(0.085, 1) },
+
+	-- Tecla física de desligar, no mesmo teclado. Não é tom: quem desliga não disca. Gravação da
+	-- tecla Power do monitor, que é o mesmo gesto de chave que afunda, com o alcance do aparelho — a
+	-- do monitor é som de UI e não traz o dela.
+	PhoneQuit = { Id = 9083627113, Volume = 0.7, Range = 15 },
 }
 
 return SfxConfig
