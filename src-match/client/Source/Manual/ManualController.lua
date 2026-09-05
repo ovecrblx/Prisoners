@@ -32,6 +32,10 @@ local ManualConfig = require(Shared:WaitForChild("ManualConfig"))
 local ITEM_ID = "Manual"
 local MOVE_SPEED_THRESHOLD = 0.5 -- velocidade de Running que fecha o caderno
 
+-- Posição das teclas na linha de dica, na mesma ordem em que Show as recebe.
+local HINT_PREV = 1
+local HINT_NEXT = 2
+
 -- CurrentCamera é recriada no spawn: sempre resolver na hora, nunca guardar no boot.
 local player = Players.LocalPlayer
 
@@ -243,6 +247,7 @@ local function stepPage(delta)
 
 	local index = math.clamp(currentPage + delta, 1, #ManualConfig.PageOrder)
 	if index ~= currentPage then
+		KeyHint.Flash(if delta < 0 then HINT_PREV else HINT_NEXT)
 		turnTo(character, index)
 	end
 end

@@ -26,6 +26,7 @@ local LIT_COLOR = Color3.fromRGB(203, 203, 203)
 
 local WAIT_TIMEOUT = 20 -- segundos esperando a GUI publicada no PlayerGui
 local HINT_TIME = 20 -- segundos de dica na tela antes de sair sozinha
+local FLASH_TIME = 0.12 -- segundos de chapa acesa a cada piscada
 
 local player = Players.LocalPlayer
 
@@ -35,6 +36,7 @@ local title
 local template
 local restColor
 local slots = {}
+local flashes = {}
 local token = 0
 
 local function nodeIn(root, path)
@@ -115,11 +117,26 @@ end
 -- A chapa da tecla acompanha o estado do que ela comanda: acesa em LIT_COLOR, apagada na cor que
 -- veio do place. Sem índice, é a primeira plaquinha da linha.
 function KeyHint.SetOn(value, index)
-	local slot = slots[index or 1]
+	local at = index or 1
+	flashes[at] = (flashes[at] or 0) + 1
+	local slot = slots[at]
 	local plate = slot and plateOf(slot)
 	if plate and restColor then
 		plate.BackgroundColor3 = if value then LIT_COLOR else restColor
 	end
+end
+
+-- Piscada de uma tecla: acende a chapa e devolve a cor de repouso sozinha. Toque em cima de toque
+-- reinicia o prazo em vez de empilhar, e um SetOn no meio cancela a devolução pendente.
+function KeyHint.Flash(index)
+	local at = index or 1
+	KeyHint.SetOn(true, at)
+	local stamp = flashes[at]
+	task.delay(FLASH_TIME, function()
+		if flashes[at] == stamp then
+			KeyHint.SetOn(false, at)
+		end
+	end)
 end
 
 -- Quem apaga o HUD em volta precisa poupar esta linha, e a identifica por instância.
