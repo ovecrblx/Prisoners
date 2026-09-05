@@ -7,13 +7,13 @@ local CordConfig = {}
 -- mundo: mover o telefone leva o cabo junto. A ordem da lista é o sufixo do nome, então o item 1 é
 -- Cord_Link_1, o que sai do aparelho, e o último é o que segura o fone.
 
--- Parado: o fone no gancho, ninguém na linha. Colhido do place como está autorado hoje.
+-- Parado: o fone no gancho, ninguém na linha.
 CordConfig.Idle = {
-	Vector3.new(0.7127, -0.3289, -0.9276),
-	Vector3.new(0.8254, -0.1545, -0.4633),
+	Vector3.new(0.7241, -0.3302, -0.9287),
+	Vector3.new(0.8093, -0.1559, -0.4158),
 	Vector3.new(0.845, 0.0467, 0.0743),
-	Vector3.new(0.7659, 0.3495, 0.5559),
-	Vector3.new(0.5274, 0.4062, 0.7054),
+	Vector3.new(0.7001, 0.3579, 0.5492),
+	Vector3.new(0.5424, 0.3976, 0.8017),
 }
 
 -- Foco no teclado: de atender até o número encher.
