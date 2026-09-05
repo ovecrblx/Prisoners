@@ -1,16 +1,21 @@
--- Sons dos assentos do cenário, por dois sinais. Corpo dos OUTROS — NPC e demais jogadores — vem
--- pelo Occupant do assento. O jogador local vem pelo Humanoid.Seated, que dispara no quadro do
+-- Sons dos assentos do cenário e o prompt que os ocupa. Corpo dos OUTROS — NPC e demais jogadores —
+-- vem pelo Occupant do assento. O jogador local vem pelo Humanoid.Seated, que dispara no quadro do
 -- gesto: o Occupant só muda depois da volta do servidor, e por ele o som saía atrasado do próprio
 -- movimento. O som sai preso na peça, então quem está por perto ouve.
+-- O prompt é UM só, e migra para o assento mais perto: 28 assentos com prompt cada encheriam a sala
+-- de teclas, e o jogador só senta em um de cada vez.
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+-- Só pelo nome da tela do HUD: quem a publica é o módulo de itens, e uma segunda cópia do nome aqui
+-- é como os dois lados divergem em silêncio.
+local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
+local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 local SeatController = {}
-
--- Onde os assentos vivem.
-local FOLDER = { "Siland_Home", "Seats" }
 
 -- Par de chaves do SfxConfig por PREFIXO do Model de assento, em minúsculas: `sec_seat` cobre tanto
 -- o `Sec_Seat` quanto os `Sec_Seat_2`, `Sec_Seat_3` e os que vierem, sem uma linha por assento.
@@ -21,20 +26,32 @@ local SEAT_SFX = {
 	home = { sit = "HomeSit", stand = "HomeStand" },
 }
 
--- s de espera pela pasta no boot.
-local FOLDER_WAIT = 20
-
 local bound = {}
+local seats = {}
+local prompt
+local perched
+local hud
+local hudShown
 
--- O cenário é publicado à mão e a caixa do nome não tem cobertura de teste.
-local function childLike(parent, name)
-	local wanted = string.lower(name)
-	for _, child in ipairs(parent:GetChildren()) do
-		if string.lower(child.Name) == wanted then
-			return child
+-- Sentado o HUD sai da tela: quem senta está num posto, e slot de item flutuando ali não pertence à
+-- cena — nem serve, porque item nenhum se usa em assento. Guarda o estado ANTERIOR em vez de
+-- devolver ligado: nada garante que ele estava.
+local function showHud(on)
+	if on then
+		if hud and hud.Parent and hudShown ~= nil then
+			hud.Enabled = hudShown
 		end
+		hud = nil
+		hudShown = nil
+		return
 	end
-	return nil
+
+	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	hud = playerGui and playerGui:FindFirstChild(ItemConfig.GuiName)
+	if hud then
+		hudShown = hud.Enabled
+		hud.Enabled = false
+	end
 end
 
 -- O par vem do Model DONO do assento, não do assento: os cinco Seat de um `Home` soam igual, e o
@@ -53,11 +70,93 @@ local function keysFor(part)
 	return nil
 end
 
-local function bind(part)
-	if bound[part] then
+local function ensurePrompt()
+	if prompt then
+		return prompt
+	end
+
+	prompt = Instance.new("ProximityPrompt")
+	prompt.Name = SeatConfig.PromptName
+	prompt.Style = Enum.ProximityPromptStyle.Custom
+	prompt.ActionText = ""
+	prompt.UIOffset = SeatConfig.PromptOffset
+	prompt.ClickablePrompt = SeatConfig.PromptClickable
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = SeatConfig.PromptDistance
+
+	prompt.Triggered:Connect(function()
+		local character = Players.LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		SeatConfig.Take(perched, humanoid)
+	end)
+
+	return prompt
+end
+
+-- O assento livre mais perto do corpo, dentro do raio de busca. Assento ocupado sai da conta: o
+-- prompt em cadeira cheia oferece um lugar que não existe.
+local function nearest(root)
+	local best, bestDist = nil, SeatConfig.SearchRange
+
+	for part in pairs(seats) do
+		if part.Parent and not part.Occupant then
+			local dist = (part.Position - root.Position).Magnitude
+			if dist < bestDist then
+				best, bestDist = part, dist
+			end
+		end
+	end
+
+	return best
+end
+
+-- O prompt muda de dono, não de existência: recriá-lo a cada passo faria o PromptShown piscar o
+-- desenho a cada quarto de segundo.
+local function perch()
+	local character = Players.LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = humanoid and humanoid.RootPart
+	local wanted = if root and not humanoid.SeatPart then nearest(root) else nil
+
+	if wanted == perched then
+		return
+	end
+	perched = wanted
+
+	if not wanted then
+		if prompt then
+			prompt.Parent = nil
+		end
 		return
 	end
 
+	local seatPrompt = ensurePrompt()
+	seatPrompt.ObjectText = SeatConfig.Title(wanted)
+	seatPrompt.Parent = wanted
+end
+
+local function bind(part)
+	if seats[part] then
+		return
+	end
+	seats[part] = true
+
+	-- Assento que o streaming levar sai das duas tabelas: sem isto elas cresceriam a partida inteira
+	-- com peça que já não existe, e a busca pelo mais perto acharia cadeira fantasma.
+	part.Destroying:Once(function()
+		seats[part] = nil
+		local link = bound[part]
+		bound[part] = nil
+		if link then
+			link:Disconnect()
+		end
+		if perched == part then
+			perched = nil
+		end
+	end)
+
+	-- Model sem prefixo no catálogo entra no prompt, mas fica mudo: sentar sempre é possível, o par
+	-- de sons é que nem todo móvel tem.
 	local keys = keysFor(part)
 	if not keys then
 		return
@@ -77,15 +176,6 @@ local function bind(part)
 		Sfx.Play(if occupant then keys.sit else keys.stand, part)
 	end)
 
-	-- Assento que o streaming levar solta a ligação: sem isto a tabela cresceria a partida inteira
-	-- com peça que já não existe.
-	part.Destroying:Once(function()
-		local link = bound[part]
-		bound[part] = nil
-		if link then
-			link:Disconnect()
-		end
-	end)
 end
 
 -- Ao levantar, `Seated` entrega o assento como nil: o último fica guardado para o som do levantar
@@ -96,10 +186,14 @@ local function watchLocal(character)
 		return
 	end
 
+	-- Corpo novo nasce de pé, e morrer sentado não garante o `Seated` de saída.
+	showHud(true)
+
 	local lastSeat = nil
 	humanoid.Seated:Connect(function(active, part)
 		local seat = part or lastSeat
 		lastSeat = if active then part else nil
+		showHud(not active)
 
 		local keys = seat and keysFor(seat)
 		if keys then
@@ -117,13 +211,10 @@ function SeatController.Start()
 		task.spawn(watchLocal, character)
 	end)
 
-	local folder = Workspace
-	for _, name in ipairs(FOLDER) do
-		folder = childLike(folder, name) or folder:WaitForChild(name, FOLDER_WAIT)
-		if not folder then
-			warn("[Seat] workspace." .. table.concat(FOLDER, ".") .. " não encontrado.")
-			return
-		end
+	local folder = SeatConfig.Folder(SeatConfig.FolderWait)
+	if not folder then
+		warn("[Seat] workspace." .. table.concat(SeatConfig.Path, ".") .. " não encontrado.")
+		return
 	end
 
 	for _, item in ipairs(folder:GetDescendants()) do
@@ -137,6 +228,18 @@ function SeatController.Start()
 		if item:IsA("Seat") then
 			bind(item)
 		end
+	end)
+
+	-- Passo largo de propósito: o prompt só troca de assento quando o jogador ANDA até outro, e por
+	-- quadro seriam 28 distâncias calculadas para responder a um gesto que leva segundos.
+	local since = 0
+	RunService.Heartbeat:Connect(function(delta)
+		since += delta
+		if since < SeatConfig.SearchStep then
+			return
+		end
+		since = 0
+		perch()
 	end)
 end
 

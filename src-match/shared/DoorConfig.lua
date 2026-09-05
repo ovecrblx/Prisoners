@@ -89,6 +89,7 @@ DoorConfig.OpenHeight = 1
 DoorConfig.PromptDistance = 10
 DoorConfig.PromptOffset = Vector2.new(0, 50)
 DoorConfig.PromptClickable = false
+DoorConfig.PromptTitle = "Door"
 
 -- Studs que a âncora do prompt avança para fora da face da folha. A engine só mostra o prompt com
 -- caminho livre da câmera até ele, e a maçaneta tem o miolo DENTRO da porta: ancorado ali, o

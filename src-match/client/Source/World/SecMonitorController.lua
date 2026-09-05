@@ -8,7 +8,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -19,7 +18,10 @@ local NpcConfig = require(Shared:WaitForChild("NpcConfig"))
 -- Só pelo contrato da lâmpada: o nome do atributo mora no módulo que o publica.
 local HighlightGate = require(script.Parent:WaitForChild("HighlightGate"))
 local SecCamController = require(script.Parent:WaitForChild("SecCamController"))
-local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
+local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
+local Lib = script.Parent.Parent:WaitForChild("Lib")
+local Pointer = require(Lib:WaitForChild("Pointer"))
+local Sfx = require(Lib:WaitForChild("Sfx"))
 
 local SecMonitorController = {}
 
@@ -130,23 +132,17 @@ local CAM_IGNORES = {
 }
 
 -- Corte preto que cobre a troca de vista: s parado no preto, curso do desvanecer, e a ordem que o
--- põe acima de tudo, cursor incluso.
+-- põe acima de tudo, o ponteiro incluso.
 local FADE_NAME = "SecFade"
 local FADE_TWEEN = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0.15)
 local FADE_ORDER = 200
 
--- Ponteiro do hover: a imagem, o lado dela em px, e a ordem que a põe acima da GUI do jogo.
-local CURSOR_NAME = "SecCursor"
-local CURSOR_IMAGE = "rbxassetid://284663799"
-local CURSOR_SIZE = 32
-local CURSOR_ORDER = 100
-
--- Onde o operador senta, de onde ele olha, e o gatilho que o leva até lá. Só quem está NESTE
--- assento vê os feeds.
-local SEATS_PATH = { "Siland_Home", "Seats" }
+-- Qual assento é o posto, de onde ele olha, e o gatilho que o leva até lá. A pasta onde procurá-lo
+-- vem do SeatConfig. Só quem está NESTE assento vê os feeds.
 local SEAT_NAME = "Sec_Seat"
 local VIEWER_NAME = "Viewer_Cam"
 local PROMPT_NAME = "Sec_Prompt"
+local PROMPT_TITLE = "Monitor"
 
 -- s de caminhada até desistir de sentar; o corpo pode ficar preso no caminho.
 local WALK_TIMEOUT = 12
@@ -290,134 +286,14 @@ local hoverPad = nil
 local pressing = false
 local lamp = nil
 
--- O corte preto da troca de vista, e o ponteiro do hover: a tela dele, a imagem, a ligação que a faz
--- seguir o mouse e quantos alvos estão sob ele.
+-- O corte preto da troca de vista: a tela dele e a folha que escurece.
 local fadeGui = nil
 local fadeSheet = nil
-local cursorGui = nil
-local cursorPointer = nil
-local cursorMove = nil
-local hovering = 0
 
 -- O índice da tela caída, quando a próxima cai, e desde quando o posto está vazio.
 local broken = nil
 local glitchAt = 0
 local leftAt = 0
-
--- O ponteiro do hover é DESENHADO por nós: a referência do MouseIcon diz que o ícone é ignorado
--- enquanto o cursor está sobre botão de GUI, e os cursores de sistema só valem em plugin. Um
--- ScreenGui seguindo o mouse não depende de nenhum dos dois.
-local function buildCursor()
-	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	if cursorGui or not playerGui then
-		return
-	end
-
-	local gui = Instance.new("ScreenGui")
-	gui.Name = CURSOR_NAME
-	gui.ResetOnSpawn = false
-	gui.DisplayOrder = CURSOR_ORDER
-	gui.Enabled = false
-
-	local image = Instance.new("ImageLabel")
-	image.Name = "Pointer"
-	image.BackgroundTransparency = 1
-	-- Sem âncora no centro: o ponto de contato do ponteiro é o canto superior esquerdo do desenho, e
-	-- centrar deixaria o clique caindo abaixo da ponta.
-	image.AnchorPoint = Vector2.zero
-	image.Size = UDim2.fromOffset(CURSOR_SIZE, CURSOR_SIZE)
-	image.Image = CURSOR_IMAGE
-	image.Parent = gui
-
-	gui.Parent = playerGui
-	cursorGui = gui
-	cursorPointer = image
-end
-
-local function hideCursor()
-	hovering = 0
-	if cursorMove then
-		cursorMove:Disconnect()
-		cursorMove = nil
-	end
-	if cursorGui then
-		cursorGui.Enabled = false
-	end
-	UserInputService.MouseIconEnabled = true
-end
-
-local function showCursor()
-	-- Sem mouse não há ponteiro a desenhar, e esconder o ícone do sistema não teria o que esconder.
-	if not UserInputService.MouseEnabled then
-		return
-	end
-
-	buildCursor()
-	if not cursorGui then
-		return
-	end
-
-	local mouse = Players.LocalPlayer:GetMouse()
-	local function follow()
-		cursorPointer.Position = UDim2.fromOffset(mouse.X, mouse.Y)
-	end
-
-	follow()
-	cursorGui.Enabled = true
-	UserInputService.MouseIconEnabled = false
-
-	cursorMove = mouse.Move:Connect(follow)
-end
-
--- Apertar e soltar valem para todo aparelho: InputBegan e InputEnded do GuiObject trazem o dedo e o
--- mouse pelo mesmo caminho, e Activated fecha o toque simples em qualquer um. MouseButton1Down/Up e
--- MouseEnter/Leave são de mouse — no celular a tecla ficava muda.
-local POINTERS = {
-	[Enum.UserInputType.MouseButton1] = true,
-	[Enum.UserInputType.Touch] = true,
-}
-
--- Soltar longe da tecla não chega ao objeto — arrastar para fora e largar deixaria o gesto preso.
--- Quem vê isso é o serviço, e daí as duas escutas do fim. O trinco `held` é o que impede a de fora
--- de soltar tecla que ninguém apertou: sem ele, todo dedo levantado na tela mexeria em todas.
-local function onPointer(object, press, release, links)
-	local held = false
-
-	table.insert(links, object.InputBegan:Connect(function(input)
-		if POINTERS[input.UserInputType] and not held then
-			held = true
-			press()
-		end
-	end))
-
-	local function finish(input)
-		if POINTERS[input.UserInputType] and held then
-			held = false
-			release()
-		end
-	end
-
-	table.insert(links, object.InputEnded:Connect(finish))
-	table.insert(links, UserInputService.InputEnded:Connect(finish))
-end
-
--- Contar quantos alvos estão sob o ponteiro, em vez de esconder no primeiro MouseLeave: passando
--- direto de um botão para o vizinho, a saída de um chega depois da entrada do outro e apagaria o
--- cursor com o mouse ainda em cima.
--- Só de mouse: dedo não paira, e o ponteiro desenhado não existe fora dele.
-local function watchHover(button, links)
-	links = links or controlLinks
-	table.insert(links, button.MouseEnter:Connect(function()
-		hovering += 1
-		showCursor()
-	end))
-	table.insert(links, button.MouseLeave:Connect(function()
-		hovering = math.max(0, hovering - 1)
-		if hovering == 0 then
-			hideCursor()
-		end
-	end))
-end
 
 -- A cabine sobrevive à sessão, e largar o posto não dispara MouseLeave: sem devolver a pose autorada,
 -- a tecla ficaria crescida esperando um ponteiro que já não está lá.
@@ -487,14 +363,14 @@ local function dressButton(button, source, clickKey, links, homes)
 		end)
 	)
 
-	onPointer(source, function()
+	Pointer.Press(source, function()
 		TweenService:Create(scale, SINK_TWEEN, { Scale = PRESS_SINK }):Play()
 		Sfx.Play(clickKey)
 	end, function()
 		TweenService:Create(scale, SINK_TWEEN, { Scale = if under then HOVER_GROW else 1 }):Play()
 	end, links)
 
-	watchHover(source, links)
+	Pointer.Hover(source, links)
 end
 
 local function dropControlLinks()
@@ -506,7 +382,7 @@ local function dropControlLinks()
 	Servo.cut()
 	restoreButtons()
 	table.clear(buttonHomes)
-	hideCursor()
+	Pointer.Drop()
 	lamp = nil
 	powerPart = nil
 	powerLocal = nil
@@ -514,11 +390,6 @@ local function dropControlLinks()
 	if hoverPad then
 		hoverPad:Destroy()
 		hoverPad = nil
-	end
-	if cursorGui then
-		cursorGui:Destroy()
-		cursorGui = nil
-		cursorPointer = nil
 	end
 	if fadeGui then
 		fadeGui:Destroy()
@@ -1391,12 +1262,7 @@ local function resolveSeat()
 	if seat and seat.Parent then
 		return seat
 	end
-	local seats = Workspace
-	for _, name in ipairs(SEATS_PATH) do
-		seats = seats and childLike(seats, name)
-	end
-	local model = seats and childLike(seats, SEAT_NAME)
-	seat = model and model:FindFirstChildWhichIsA("Seat", true)
+	seat = SeatConfig.Find(SEAT_NAME)
 	return seat
 end
 
@@ -1432,7 +1298,7 @@ local function takePost()
 	end
 
 	walking = true
-	humanoid:MoveTo(seat.Position)
+	SeatConfig.Take(seat, humanoid)
 	task.delay(WALK_TIMEOUT, function()
 		walking = false
 	end)
@@ -1699,7 +1565,7 @@ local function pressPower()
 
 	task.delay(POWER_DELAY, function()
 		pressing = false
-		hideCursor()
+		Pointer.Hide()
 		local character = Players.LocalPlayer.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -1749,7 +1615,7 @@ bindControl = function(monitor)
 		pad.Parent = button.Parent
 		hoverPad = pad
 
-		onPointer(pad, pressPower, function() end, controlLinks)
+		Pointer.Press(pad, pressPower, function() end, controlLinks)
 		dressButton(button, pad)
 	end
 
@@ -1774,7 +1640,7 @@ local function ensurePrompt(screen)
 	created.Name = PROMPT_NAME
 	created.Style = Enum.ProximityPromptStyle.Custom
 	created.ActionText = ""
-	created.ObjectText = ""
+	created.ObjectText = PROMPT_TITLE
 	created.UIOffset = DoorConfig.PromptOffset
 	created.ClickablePrompt = DoorConfig.PromptClickable
 	created.HoldDuration = 0
@@ -1897,7 +1763,7 @@ attach = function(index, panel)
 				end
 			end
 
-			onPointer(button, function()
+			Pointer.Press(button, function()
 				turnHeld[direction] = true
 				Servo.start()
 			end, release, slot.links)

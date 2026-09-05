@@ -9,11 +9,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DoorConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("DoorConfig"))
 
+-- A alavanca sobe e desce a cortina; os números do prompt saem do DoorConfig, o título não.
+local PROMPT_TITLE = "Lever"
+
 local function buildPrompt(curtain, parent)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Style = Enum.ProximityPromptStyle.Custom
 	prompt.ActionText = ""
-	prompt.ObjectText = ""
+	prompt.ObjectText = PROMPT_TITLE
 	prompt.UIOffset = DoorConfig.PromptOffset
 	prompt.ClickablePrompt = DoorConfig.PromptClickable
 	prompt.HoldDuration = 0

@@ -17,6 +17,9 @@ local ItemConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild
 -- equipado, então cliente que pula a coleta não acende lanterna nenhuma.
 local FIELDS = { equipped = true, inHand = true, on = true }
 
+-- s de espera pelo Humanoid do corpo recém-nascido.
+local HUMANOID_WAIT = 10
+
 local actionRemote
 local stateRemote
 
@@ -59,6 +62,25 @@ local function setState(player, itemId, equipped, inHand, on)
 	publish(player, itemId, state)
 end
 
+local function seated(player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.SeatPart ~= nil
+end
+
+-- Guarda tudo o que está na mão. Sentar é assumir um posto, e as duas mãos são dele.
+local function stow(player)
+	local byItem = states[player]
+	if not byItem then
+		return
+	end
+	for itemId, state in pairs(byItem) do
+		if state.equipped then
+			setState(player, itemId, true, false, false)
+		end
+	end
+end
+
 -- O cliente manda o valor que quer, não um "alterna": mandar o absoluto faz dois toques rápidos
 -- convergirem em vez de dependerem da ordem de chegada.
 local function onAction(player, itemId, field, value)
@@ -82,6 +104,12 @@ local function onAction(player, itemId, field, value)
 		return
 	end
 	if not state.equipped then
+		return
+	end
+	-- Sentado não se usa item. Só o pedido de TIRAR passa: recusar os dois deixaria quem sentou de
+	-- lanterna acesa sem como apagá-la. A checagem é daqui porque esconder o HUD é do cliente, e
+	-- cliente não é a regra.
+	if value and seated(player) then
 		return
 	end
 	-- Ligado é da mão: guardar apaga, e pedido de acender com o item na cintura não passa. Sem
@@ -119,7 +147,28 @@ function ItemService.Init()
 			return
 		end
 		watched[player] = true
-		player.CharacterAdded:Connect(function()
+
+		-- Sentar guarda o que estava na mão: recusar o pedido novo não desfaz o item já erguido, e
+		-- o posto ficaria com lanterna acesa até a pessoa levantar.
+		local function watchSeat(character)
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+				or character:WaitForChild("Humanoid", HUMANOID_WAIT)
+			if humanoid then
+				humanoid:GetPropertyChangedSignal("SeatPart"):Connect(function()
+					if humanoid.SeatPart then
+						stow(player)
+					end
+				end)
+			end
+		end
+
+		if player.Character then
+			task.spawn(watchSeat, player.Character)
+		end
+
+		player.CharacterAdded:Connect(function(character)
+			task.spawn(watchSeat, character)
+
 			local byItem = states[player]
 			if not byItem then
 				return

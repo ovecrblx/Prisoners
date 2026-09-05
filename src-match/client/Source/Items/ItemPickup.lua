@@ -19,12 +19,12 @@ local PROMPT_NAME = "ItemPrompt"
 
 -- Mesmo estilo dos outros recursos do jogo: Custom, sem texto, desenhado pelo PromptDisplay. Os
 -- números saem do DoorConfig porque são os do projeto — uma segunda cópia deles é como divergem.
-local function buildPrompt(parent, triggered)
+local function buildPrompt(parent, title, triggered)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = PROMPT_NAME
 	prompt.Style = Enum.ProximityPromptStyle.Custom
 	prompt.ActionText = ""
-	prompt.ObjectText = ""
+	prompt.ObjectText = title or ""
 	prompt.UIOffset = DoorConfig.PromptOffset
 	prompt.ClickablePrompt = DoorConfig.PromptClickable
 	prompt.HoldDuration = 0
@@ -128,7 +128,7 @@ function ItemPickup:Show()
 	clone:PivotTo(self:Pivot())
 	-- Som antes do handler: ele esconde o exemplar, e som preso numa peça destruída não chega a
 	-- soar. Sem peça de propósito — a coleta é local, e quem pegou está em cima dela.
-	buildPrompt(handle, function()
+	buildPrompt(handle, self.config.PromptTitle, function()
 		if self.config.PickupSfx then
 			Sfx.Play(self.config.PickupSfx)
 		end

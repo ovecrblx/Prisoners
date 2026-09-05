@@ -113,6 +113,7 @@ FlashlightConfig.PowerOnSfx = "FlashlightOn"
 FlashlightConfig.PowerOffSfx = "FlashlightOff"
 
 FlashlightConfig.HoldAnimationId = "rbxassetid://78800081500176"
+FlashlightConfig.PromptTitle = "Flashlight"
 FlashlightConfig.IconId = "rbxassetid://120425963120676"
 FlashlightConfig.HotKey = Enum.KeyCode.Two -- alterna cintura/mão; rótulo no slot acompanha
 FlashlightConfig.KeyLabel = "2"

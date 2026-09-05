@@ -71,7 +71,7 @@ local function buildPrompt(door, parent)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Style = Enum.ProximityPromptStyle.Custom
 	prompt.ActionText = ""
-	prompt.ObjectText = ""
+	prompt.ObjectText = DoorConfig.PromptTitle
 	prompt.UIOffset = DoorConfig.PromptOffset
 	prompt.ClickablePrompt = DoorConfig.PromptClickable
 	prompt.HoldDuration = 0

@@ -11,7 +11,9 @@ local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx")
 
 local SCREEN_GUI_NAME = "ProximityPrompts"
 
--- Medidas do prompt padrão, em pixels.
+-- Medidas do prompt padrão, em pixels. A largura é maior que a altura para caber a tecla e o título
+-- lado a lado; a altura é que divide o UIOffset, porque o círculo continua sendo um quadrado.
+local PROMPT_WIDTH = 124
 local PROMPT_SIZE = 72
 local ROUND_SIZE = 48
 local ROUND_TRANSPARENCY = 0.5
@@ -29,6 +31,17 @@ local PROGRESS_IMAGE = "rbxasset://textures/ui/Controls/RadialFill.png"
 local CONTENT_COLOR = Color3.new(1, 1, 1)
 local ROUND_COLOR = Color3.fromRGB(75, 75, 75)
 local TEXT_SIZE = 14
+
+-- Título ao lado da tecla, dizendo a que ela se refere. Sai do ObjectText, que é a propriedade da
+-- engine para isso — prompt que não o preenche continua desenhando só a tecla, como antes.
+-- Contorno em vez de backplate: o desenho do projeto não tem a placa escura atrás, e sem nada por
+-- baixo o texto branco some em parede clara.
+-- O passo NEGATIVO do layout encosta o título na tecla: o AutomaticSize deixa folga nas bordas do
+-- texto, e sem descontá-la o par abre um vão que a largura de 124 não tem para dar.
+local TITLE_FONT = Font.fromName("FredokaOne", Enum.FontWeight.Bold)
+local TITLE_SIZE = 16
+local TITLE_STROKE = 0.4
+local TITLE_PADDING = UDim.new(-0.03, 0)
 local HOLD_SCALE = 1.33
 local HOLD_SCALE_TOUCH = 1.6
 
@@ -291,12 +304,25 @@ local function createPrompt(prompt, inputType, gui)
 	local promptUI = Instance.new("BillboardGui")
 	promptUI.Name = "Prompt"
 	promptUI.AlwaysOnTop = true
-	promptUI.Size = UDim2.fromOffset(PROMPT_SIZE, PROMPT_SIZE)
-	promptUI.SizeOffset = Vector2.new(prompt.UIOffset.X / PROMPT_SIZE, prompt.UIOffset.Y / PROMPT_SIZE)
+	promptUI.Size = UDim2.fromOffset(PROMPT_WIDTH, PROMPT_SIZE)
+	promptUI.SizeOffset = Vector2.new(prompt.UIOffset.X / PROMPT_WIDTH, prompt.UIOffset.Y / PROMPT_SIZE)
+
+	-- Tecla e título entram numa fila horizontal centrada: o par inteiro fica no eixo do objeto, e
+	-- não a tecla, com o texto pendendo de um lado só.
+	local row = Instance.new("UIListLayout")
+	row.FillDirection = Enum.FillDirection.Horizontal
+	row.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	row.VerticalAlignment = Enum.VerticalAlignment.Center
+	row.SortOrder = Enum.SortOrder.LayoutOrder
+	row.Padding = TITLE_PADDING
+	row.Parent = promptUI
 
 	local inputFrame = Instance.new("Frame")
 	inputFrame.Name = "InputFrame"
+	inputFrame.LayoutOrder = 1
 	inputFrame.Size = UDim2.fromScale(1, 1)
+	inputFrame.Position = UDim2.fromScale(0, 0.5)
+	inputFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 	inputFrame.BackgroundTransparency = 1
 	inputFrame.SizeConstraint = Enum.SizeConstraint.RelativeYY
 	inputFrame.Parent = promptUI
@@ -333,6 +359,34 @@ local function createPrompt(prompt, inputType, gui)
 
 	createFace(prompt, inputType, face, fadeOut, fadeIn)
 	bindInput(prompt, inputType, promptUI)
+
+	-- Segundo item da fila, à direita da tecla. O texto fica em inglês e a engine o traduz sozinha:
+	-- AutoLocalize é ligado por padrão, e desligá-lo tirava o ObjectText do LocalizationTable.
+	if prompt.ObjectText ~= "" then
+		local title = Instance.new("TextLabel")
+		title.Name = "ObjectText"
+		title.LayoutOrder = 2
+		title.AutomaticSize = Enum.AutomaticSize.XY
+		title.AnchorPoint = Vector2.new(0.5, 0.5)
+		title.Position = UDim2.new(1, 0, 0.5, 0)
+		title.Size = UDim2.fromOffset(0, 0)
+		title.BackgroundTransparency = 1
+		title.FontFace = TITLE_FONT
+		title.TextSize = TITLE_SIZE
+		title.TextScaled = true
+		title.TextColor3 = CONTENT_COLOR
+		title.TextXAlignment = Enum.TextXAlignment.Left
+		title.TextTransparency = 1
+		title.TextStrokeTransparency = 1
+		title.Text = prompt.ObjectText
+		title.Parent = promptUI
+
+		table.insert(fadeOut, TweenService:Create(title, TWEEN_QUICK, { TextTransparency = 1, TextStrokeTransparency = 1 }))
+		table.insert(
+			fadeIn,
+			TweenService:Create(title, TWEEN_QUICK, { TextTransparency = 0, TextStrokeTransparency = TITLE_STROKE })
+		)
+	end
 
 	local holdBeganConnection, holdEndedConnection
 

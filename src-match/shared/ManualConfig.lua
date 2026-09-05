@@ -87,6 +87,7 @@ ManualConfig.CoverOpenTween = TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.Eas
 ManualConfig.CoverCloseTween = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
 ManualConfig.HoldAnimationId = "rbxassetid://112441741695315"
+ManualConfig.PromptTitle = "Notebook"
 ManualConfig.IconId = "rbxassetid://106157472383152"
 ManualConfig.HotKey = Enum.KeyCode.One -- alterna cintura/mão; rótulo no slot acompanha
 ManualConfig.KeyLabel = "1"
