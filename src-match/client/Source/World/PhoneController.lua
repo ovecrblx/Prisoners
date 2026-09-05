@@ -72,6 +72,36 @@ local function syncRing()
 	end
 end
 
+-- A cabeça do próprio jogador some enquanto ele está na linha: a vista é fixa em cima do teclado e,
+-- de tão perto, o crânio dele entra na frente do visor. Só na tela dele — quem assiste vê o corpo
+-- inteiro. Guarda a altura anterior em vez de devolver zero: nada garante que era zero.
+-- Mesmo caminho do modo de leitura do caderno, e pelo mesmo motivo: `Transparency` é escrita local
+-- no personagem, e o servidor não a escreve de volta.
+local hiddenHeads = {}
+
+local function veilHead(hidden)
+	if not hidden then
+		for _, entry in ipairs(hiddenHeads) do
+			if entry.part.Parent then
+				entry.part.Transparency = entry.transparency
+			end
+		end
+		table.clear(hiddenHeads)
+		return
+	end
+
+	local character = player.Character
+	if not character or #hiddenHeads > 0 then
+		return
+	end
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name == PhoneConfig.FacePartName then
+			table.insert(hiddenHeads, { part = part, transparency = part.Transparency })
+			part.Transparency = 1
+		end
+	end
+end
+
 local function stop()
 	token += 1
 	wide = false
@@ -100,6 +130,7 @@ local function stop()
 	if mine then
 		mine = false
 		ItemHud.Block("Phone", false)
+		veilHead(false)
 		PhoneDial.Close()
 		player.CameraMode = cameraMode
 
@@ -223,6 +254,7 @@ local function begin(userId, loud)
 	end
 
 	mine = true
+	veilHead(true)
 	-- Na linha o HUD sai da tela: o fone toma o rosto, o teclado toma o ponteiro, e item nenhum se
 	-- usa com o aparelho na mão.
 	ItemHud.Block("Phone", true)
