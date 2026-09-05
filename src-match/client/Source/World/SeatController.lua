@@ -9,9 +9,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
--- Só pelo nome da tela do HUD: quem a publica é o módulo de itens, e uma segunda cópia do nome aqui
--- é como os dois lados divergem em silêncio.
-local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
 local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
@@ -30,29 +27,6 @@ local bound = {}
 local seats = {}
 local prompt
 local perched
-local hud
-local hudShown
-
--- Sentado o HUD sai da tela: quem senta está num posto, e slot de item flutuando ali não pertence à
--- cena — nem serve, porque item nenhum se usa em assento. Guarda o estado ANTERIOR em vez de
--- devolver ligado: nada garante que ele estava.
-local function showHud(on)
-	if on then
-		if hud and hud.Parent and hudShown ~= nil then
-			hud.Enabled = hudShown
-		end
-		hud = nil
-		hudShown = nil
-		return
-	end
-
-	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	hud = playerGui and playerGui:FindFirstChild(ItemConfig.GuiName)
-	if hud then
-		hudShown = hud.Enabled
-		hud.Enabled = false
-	end
-end
 
 -- O par vem do Model DONO do assento, não do assento: os cinco Seat de um `Home` soam igual, e o
 -- nome deles é só `Seat1`..`Seat4`.
@@ -186,14 +160,10 @@ local function watchLocal(character)
 		return
 	end
 
-	-- Corpo novo nasce de pé, e morrer sentado não garante o `Seated` de saída.
-	showHud(true)
-
 	local lastSeat = nil
 	humanoid.Seated:Connect(function(active, part)
 		local seat = part or lastSeat
 		lastSeat = if active then part else nil
-		showHud(not active)
 
 		local keys = seat and keysFor(seat)
 		if keys then

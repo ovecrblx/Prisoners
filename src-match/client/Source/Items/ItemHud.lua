@@ -2,7 +2,8 @@
 -- imagem do item, Key o rótulo da tecla, Fill o progresso do hold. O template fica invisível; cada
 -- item é um clone, na ordem de ItemConfig.Order — que é também a das teclas.
 -- Toque no slot ou na tecla alterna cintura/mão; segurar por HoldTime devolve o item ao cenário. A
--- GUI liga quando o primeiro slot aparece e desliga quando o último sai.
+-- GUI liga quando o primeiro slot aparece, desliga quando o último sai, e fica desligada enquanto
+-- alguma cena a bloquear — sentar e a chamada no telefone são as de hoje.
 local ItemHud = {}
 
 local Players = game:GetService("Players")
@@ -23,7 +24,7 @@ local player = Players.LocalPlayer
 local gui, hud, template
 local slots = {}
 local keyLink
-local seated = false
+local blocks = {}
 
 local Slot = {}
 Slot.__index = Slot
@@ -42,11 +43,18 @@ local function anyVisible()
 	return false
 end
 
--- Sentado a GUI inteira sai: nada do que ela oferece vale de um assento, e o item já saiu da mão.
+-- Cena que toma o jogador leva a GUI inteira: sentar, e a chamada no telefone. Cada uma some com a
+-- própria chave e a GUI só volta quando a última sair — dois donos escrevendo `Enabled` direto é
+-- como um devolve o que o outro acabou de apagar.
 local function refreshGui()
 	if gui then
-		gui.Enabled = anyVisible() and not seated
+		gui.Enabled = anyVisible() and next(blocks) == nil
 	end
+end
+
+function ItemHud.Block(source, active)
+	blocks[source] = active or nil
+	refreshGui()
 end
 
 function Slot:_resetHold(instant)
@@ -164,12 +172,14 @@ end
 
 -- Uma conexão de teclado para todos os slots: cada item traz a sua tecla, e só o slot visível
 -- responde. N conexões idênticas disputando a mesma tecla é como um toque vira dois.
+-- GUI apagada também não responde tecla: o slot continua vivo por baixo dela, e sem isso sentar ou
+-- atender o telefone tirava o botão da tela sem tirar o atalho dele.
 local function bindKeys()
 	if keyLink then
 		return
 	end
 	keyLink = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
+		if gameProcessed or (gui and not gui.Enabled) then
 			return
 		end
 		for _, slot in pairs(slots) do
@@ -212,8 +222,7 @@ end
 
 function ItemHud.Init()
 	ItemHold.OnSeat(function(active)
-		seated = active
-		refreshGui()
+		ItemHud.Block("Seat", active)
 	end)
 
 	local playerGui = player:WaitForChild("PlayerGui", GUI_TIMEOUT)

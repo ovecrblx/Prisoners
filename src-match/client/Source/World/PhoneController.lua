@@ -21,6 +21,9 @@ local PhoneConfig = require(Shared:WaitForChild("PhoneConfig"))
 local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 local PhoneDial = require(script.Parent:WaitForChild("PhoneDial"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
+local Items = script.Parent.Parent:WaitForChild("Items")
+local ItemHold = require(Items:WaitForChild("ItemHold"))
+local ItemHud = require(Items:WaitForChild("ItemHud"))
 
 -- Depois da câmera, em RenderPriority.Camera + 2: o módulo de câmera escreve a CFrame em Camera e o
 -- CameraLimit em Camera + 1, e lida antes deles ela ainda é a do quadro passado — o fone nadaria um
@@ -94,6 +97,7 @@ local function stop()
 
 	if mine then
 		mine = false
+		ItemHud.Block("Phone", false)
 		PhoneDial.Close()
 		player.CameraMode = cameraMode
 
@@ -214,6 +218,10 @@ local function begin(userId, loud)
 	end
 
 	mine = true
+	-- Na linha o HUD sai da tela: o fone toma o rosto, o teclado toma o ponteiro, e item nenhum se
+	-- usa com o aparelho na mão.
+	ItemHud.Block("Phone", true)
+	ItemHold.Stow()
 	cameraMode = player.CameraMode
 	player.CameraMode = Enum.CameraMode.LockFirstPerson
 
