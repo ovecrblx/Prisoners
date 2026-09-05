@@ -22,7 +22,9 @@ local ItemHud = require(Items:WaitForChild("ItemHud"))
 local ItemPickup = require(Items:WaitForChild("ItemPickup"))
 local ItemView = require(Items:WaitForChild("ItemView"))
 local ManualView = require(script.Parent:WaitForChild("ManualView"))
-local MobileHud = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MobileHud"))
+local UI = script.Parent.Parent:WaitForChild("UI")
+local KeyHint = require(UI:WaitForChild("KeyHint"))
+local MobileHud = require(UI:WaitForChild("MobileHud"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
 local ManualConfig = require(Shared:WaitForChild("ManualConfig"))
@@ -40,6 +42,7 @@ local touchPanel
 local touchPager
 
 local use = { links = {}, hitboxes = {}, actions = {}, active = false, token = 0 }
+local masked = {}
 local collected = false
 local equipped = false
 local inHand = false
@@ -294,6 +297,34 @@ local function onTap()
 	end
 end
 
+-- O livro apaga o HUD em volta, mas não a linha de dica: ela mora no mesmo ScreenGui e é o que
+-- ensina as teclas do livro. Por isso some quadro a quadro em vez de desligar o MainGui inteiro, e
+-- volta só o que este apagou.
+local function maskHud(value)
+	local playerGui = player:FindFirstChild("PlayerGui")
+	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")
+	if not mainGui then
+		return
+	end
+	if value then
+		local keep = KeyHint.Panel()
+		table.clear(masked)
+		for _, child in ipairs(mainGui:GetChildren()) do
+			if child:IsA("GuiObject") and child ~= keep and child.Visible then
+				child.Visible = false
+				table.insert(masked, child)
+			end
+		end
+		return
+	end
+	for _, child in ipairs(masked) do
+		if child.Parent then
+			child.Visible = true
+		end
+	end
+	table.clear(masked)
+end
+
 local function exitUse()
 	use.token += 1
 	currentPage = 1
@@ -336,11 +367,7 @@ local function exitUse()
 	restoreAccessories()
 	restoreHeads()
 
-	local playerGui = player:FindFirstChild("PlayerGui")
-	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")
-	if mainGui then
-		mainGui.Enabled = true
-	end
+	maskHud(false)
 	ItemHud.SetVisible(true)
 end
 
@@ -366,11 +393,7 @@ local function enterUse()
 
 	ItemHold.Claim(ITEM_ID)
 
-	local playerGui = player:FindFirstChild("PlayerGui")
-	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")
-	if mainGui then
-		mainGui.Enabled = false
-	end
+	maskHud(true)
 	ItemHud.SetVisible(false)
 	hideHeads()
 	hideAccessories()
