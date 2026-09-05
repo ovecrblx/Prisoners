@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(script.Parent.Parent:WaitForChild("Util"):WaitForChild("Remotes"))
 local ShiftService = require(script.Parent.Parent:WaitForChild("Shift"):WaitForChild("ShiftService"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local CordConfig = require(Shared:WaitForChild("CordConfig"))
 local PhoneConfig = require(Shared:WaitForChild("PhoneConfig"))
 local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 
@@ -38,22 +39,26 @@ function PhoneService.OnAnswer(callback)
 	table.insert(answerListeners, callback)
 end
 
--- Posse da corda vai para quem atendeu: cliente simula o que possui, e é a tela dele que tem o fone
--- no rosto. Ancorado não muda de dono, então elo travado sai fora sem derrubar os outros.
-local function ownCord(player)
+-- O cabo deixa de ser física: elo ancorado sai do solver, e a pose de cada fase quem escreve é o
+-- cliente. Quem ancora é o servidor porque `Anchored` tem de valer em toda máquina. O
+-- SpringConstraint fica ligado de propósito: é ele que desenha a espiral, e entre peças ancoradas
+-- não empurra nada.
+local function freezeCord()
 	for _, child in ipairs(model:GetChildren()) do
-		if child:IsA("BasePart") and not child.Anchored
+		if
+			child:IsA("BasePart")
 			and string.sub(child.Name, 1, #PhoneConfig.LinkPrefix) == PhoneConfig.LinkPrefix
 		then
-			local ok, err = pcall(function()
-				if player then
-					child:SetNetworkOwner(player)
-				else
-					child:SetNetworkOwnershipAuto()
-				end
-			end)
-			if not ok then
-				warn("[PhoneService] posse do cabo recusada em " .. child.Name .. ": " .. tostring(err))
+			child.Anchored = true
+			child.CanCollide = false
+		end
+	end
+
+	for _, item in ipairs(model:GetDescendants()) do
+		for _, class in ipairs(CordConfig.DeadClasses) do
+			if item:IsA(class) then
+				item.Enabled = false
+				break
 			end
 		end
 	end
@@ -128,7 +133,6 @@ local function release(player)
 
 	publish(nil)
 	ring(nil)
-	ownCord(nil)
 end
 
 local function answer(player)
@@ -151,7 +155,6 @@ local function answer(player)
 	end
 
 	publish(player)
-	ownCord(player)
 
 	if answered then
 		for _, callback in ipairs(answerListeners) do
@@ -187,6 +190,7 @@ function PhoneService.Start()
 		return
 	end
 
+	freezeCord()
 	publish(nil)
 	ring(nil)
 

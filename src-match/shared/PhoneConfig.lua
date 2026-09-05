@@ -21,7 +21,7 @@ PhoneConfig.HandsetCallAngles = Vector3.new(60, 45, 180)
 
 -- Valem nas duas vistas.
 PhoneConfig.CameraSmoothing = 12
-PhoneConfig.HandsetSmoothing = 8 -- o cabo é rope: salto aqui dá tranco na corda
+PhoneConfig.HandsetSmoothing = 8 -- a espiral segue o fone: salto aqui vira estalo na mola
 
 -- Estrutura esperada no place. O prompt mora na base, que é a peça com CanQuery ligado; o fone é a
 -- peça que sobe ao rosto, e o que estiver soldado nela vai junto.
@@ -60,8 +60,8 @@ PhoneConfig.PromptTitle = "Phone"
 -- enquadramento é fixo em cima do teclado, e de pé o jogador sai dele andando sem querer.
 PhoneConfig.SeatName = "Sec_Seat_1"
 
--- Prefixo dos elos soltos do cabo. Quem está na linha simula a corda: o fone só sobe ao rosto na
--- tela de cada cliente, e quem não simula contra o próprio fone veria o cabo ignorando o aparelho.
+-- Prefixo dos elos do cabo. Eles não têm mais física: o servidor os ancora no boot e cada cliente
+-- os leva à pose da fase, que mora no CordConfig.
 PhoneConfig.LinkPrefix = "Cord_Link"
 
 -- Cancela a chamada: studs/s de caminhada que já contam como sair do lugar. Pulo cancela sempre.

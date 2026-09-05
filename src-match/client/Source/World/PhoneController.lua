@@ -1,7 +1,7 @@
 -- Telefone de workspace.Siland_Home.interactive.Phone, desenhado em cada cliente. O servidor
 -- publica só o UserId de quem atendeu; daqui saem o fone subindo ao rosto, a vista de quem está na
 -- linha — enquadramento fixo em cima do teclado — e o cancelamento ao sair do lugar. Teclado e visor
--- são do PhoneDial, montado só para quem atendeu.
+-- são do PhoneDial, e o cabo é do PhoneCord, que segue a mesma fase.
 -- O fone é peça de mundo, uma só: cada cliente move a sua cópia para o rosto do dono da chamada,
 -- então todos veem a mesma cena sem o servidor mexer em CFrame quadro a quadro.
 -- Com streaming o Model e as peças dele vão e voltam, e voltam como instância nova: nada é resolvido
@@ -19,6 +19,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local PhoneConfig = require(Shared:WaitForChild("PhoneConfig"))
 local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 local PhoneDial = require(script.Parent:WaitForChild("PhoneDial"))
+local PhoneCord = require(script.Parent:WaitForChild("PhoneCord"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local Items = script.Parent.Parent:WaitForChild("Items")
 local ItemHold = require(Items:WaitForChild("ItemHold"))
@@ -115,6 +116,8 @@ local function stop()
 		link:Disconnect()
 	end
 	table.clear(links)
+
+	PhoneCord.Phase("Idle")
 
 	pose = nil
 	if handset and handset.Parent then
@@ -245,6 +248,8 @@ local function begin(userId, loud)
 		part.CFrame = pose
 	end)
 
+	PhoneCord.Phase("Keypad")
+
 	if loud then
 		Sfx.Play("PhonePick", part)
 	end
@@ -267,6 +272,7 @@ local function begin(userId, loud)
 	local origin = model:GetAttribute(PhoneConfig.CallerAttribute)
 	PhoneDial.Open(model, PhoneConfig.Callers[origin], function(active)
 		wide = active
+		PhoneCord.Phase(if active then "Call" else "Keypad")
 	end)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -333,6 +339,7 @@ local function bind(target)
 	model = target
 	handset = nil
 	home = nil
+	PhoneCord.Bind(model)
 	modelLink = model:GetAttributeChangedSignal(PhoneConfig.UserAttribute):Connect(function()
 		apply(true)
 	end)
