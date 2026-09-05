@@ -274,8 +274,10 @@ function RouteData.ConnectedComponents(graph: Graph): { { string } }
 			seen[root] = true
 			local queue = { root }
 			local component = { root }
-			while #queue > 0 do
-				local current = table.remove(queue, 1) :: string
+			local head = 1
+			while head <= #queue do
+				local current = queue[head]
+				head += 1
 				for _, neighbor in ipairs(neighbors[current] or {}) do
 					if not seen[neighbor] then
 						seen[neighbor] = true
