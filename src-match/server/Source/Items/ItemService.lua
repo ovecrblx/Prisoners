@@ -20,6 +20,33 @@ local FIELDS = { equipped = true, inHand = true, on = true }
 -- s de espera pelo Humanoid do corpo recém-nascido.
 local HUMANOID_WAIT = 10
 
+-- Teto de pedidos por jogador por segundo. Cada aceite vira FireAllClients, e sem teto um cliente
+-- transforma cada pacote seu em N pacotes do servidor.
+local window = {}
+
+local function withinRate(player)
+	local now = os.clock()
+	local slot = window[player]
+	if not slot or now - slot.startedAt >= 1 then
+		window[player] = { count = 1, startedAt = now }
+		return true
+	end
+	slot.count += 1
+	return slot.count <= ItemConfig.ActionsPerSecond
+end
+
+-- O exemplar de coleta é do cliente; o que o servidor confere é se o corpo está perto do ponto onde
+-- ele fica autorado. Sem isto a task de coleta fecha de qualquer canto do mapa.
+local function nearPickup(player, itemId)
+	local config = ItemConfig.Of(itemId)
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not (config and config.PickupPosition and root) then
+		return false
+	end
+	return (root.Position - config.PickupPosition).Magnitude <= ItemConfig.CollectRange
+end
+
 local actionRemote
 local stateRemote
 
@@ -90,10 +117,16 @@ local function onAction(player, itemId, field, value)
 	if typeof(field) ~= "string" or not FIELDS[field] or typeof(value) ~= "boolean" then
 		return
 	end
+	if not withinRate(player) then
+		return
+	end
 
 	local state = stateOf(player, itemId)
 	if field == "equipped" then
 		local first = value and not state.collected
+		if first and not nearPickup(player, itemId) then
+			return
+		end
 		state.collected = value
 		setState(player, itemId, value, false, false)
 		if first then
@@ -200,6 +233,7 @@ function ItemService.Init()
 		end
 		states[player] = nil
 		watched[player] = nil
+		window[player] = nil
 	end)
 	for _, player in ipairs(Players:GetPlayers()) do
 		onPlayer(player)

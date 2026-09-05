@@ -28,6 +28,13 @@ ItemConfig.StateRemote = "ItemState" -- servidor -> todos; sem argumento, client
 
 ItemConfig.HoldTime = 3 -- segundos de botão segurado para devolver o item ao lugar de coleta
 
+-- studs do HumanoidRootPart ao ponto de coleta que o servidor aceita como "pegou". O prompt do
+-- cliente abre a DoorConfig.PromptDistance; a folga é latência e corpo em movimento.
+ItemConfig.CollectRange = 16
+
+-- Pedidos de ItemAction por jogador por segundo; acima disso o servidor ignora.
+ItemConfig.ActionsPerSecond = 10
+
 function ItemConfig.Index(itemId)
 	for index, name in ipairs(ItemConfig.Order) do
 		if name == itemId then
@@ -35,6 +42,13 @@ function ItemConfig.Index(itemId)
 		end
 	end
 	return nil
+end
+
+-- Config do próprio item, pelo nome do módulo no Shared: Flashlight -> FlashlightConfig. É lá que
+-- moram pose e ponto de coleta.
+function ItemConfig.Of(itemId)
+	local module = script.Parent:FindFirstChild(itemId .. "Config")
+	return if module then require(module) else nil
 end
 
 return ItemConfig
