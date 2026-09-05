@@ -1,6 +1,7 @@
 -- Telefone de workspace.Siland_Home.interactive.Phone, desenhado em cada cliente. O servidor
 -- publica só o UserId de quem atendeu; daqui saem o fone subindo ao rosto, a vista de quem está na
--- linha — enquadramento fixo em cima do teclado — e o cancelamento ao sair do lugar.
+-- linha — enquadramento fixo em cima do teclado — e o cancelamento ao sair do lugar. Teclado e visor
+-- são do PhoneDial, montado só para quem atendeu.
 -- O fone é peça de mundo, uma só: cada cliente move a sua cópia para o rosto do dono da chamada,
 -- então todos veem a mesma cena sem o servidor mexer em CFrame quadro a quadro.
 -- Com streaming o Model e as peças dele vão e voltam, e voltam como instância nova: nada é resolvido
@@ -11,10 +12,15 @@ local PhoneController = {}
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
-local CameraConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CameraConfig"))
-local PhoneConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("PhoneConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local CameraConfig = require(Shared:WaitForChild("CameraConfig"))
+local PhoneConfig = require(Shared:WaitForChild("PhoneConfig"))
+local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
+local PhoneDial = require(script.Parent:WaitForChild("PhoneDial"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 -- Depois da câmera, em RenderPriority.Camera + 2: o módulo de câmera escreve a CFrame em Camera e o
 -- CameraLimit em Camera + 1, e lida antes deles ela ainda é a do quadro passado — o fone nadaria um
@@ -37,11 +43,35 @@ local pose
 local cameraMode = Enum.CameraMode.Classic
 local token = 0
 
+local ringLink
+local ringing
+
 local apply
+
+-- O toque é de mundo: sai da base do aparelho, em laço, e todo cliente o desenha a partir do mesmo
+-- atributo. Quem o cala é atender ou a janela do servidor vencer.
+local function syncRing()
+	local on = model:GetAttribute(PhoneConfig.RingingAttribute) == true
+	if on == (ringing ~= nil) then
+		return
+	end
+
+	if ringing then
+		ringing:Destroy()
+		ringing = nil
+		return
+	end
+
+	local base = model:FindFirstChild(PhoneConfig.BaseName)
+	if base and base:IsA("BasePart") then
+		ringing = Sfx.Hold("PhoneRing", base)
+	end
+end
 
 local function stop()
 	token += 1
 
+	local ran = render
 	if render then
 		render = false
 		RunService:UnbindFromRenderStep(RENDER_BIND)
@@ -53,12 +83,18 @@ local function stop()
 	table.clear(links)
 
 	pose = nil
-	if handset and handset.Parent and home then
-		handset.CFrame = home
+	if handset and handset.Parent then
+		if ran then
+			Sfx.Play("PhoneDrop", handset)
+		end
+		if home then
+			handset.CFrame = home
+		end
 	end
 
 	if mine then
 		mine = false
+		PhoneDial.Close()
 		player.CameraMode = cameraMode
 
 		local camera = Workspace.CurrentCamera
@@ -121,7 +157,9 @@ local function aim(delta)
 	camera.CFrame = camera.CFrame:Lerp(PhoneConfig.View(), 1 - math.exp(-PhoneConfig.CameraSmoothing * delta))
 end
 
-local function begin(userId)
+-- `loud` separa a transição de quem acabou de atender do retrato que o streaming ou a entrada tardia
+-- entregam: só a primeira tem gancho sendo tirado.
+local function begin(userId, loud)
 	stop()
 	local mark = token
 
@@ -133,7 +171,7 @@ local function begin(userId)
 	local character = who.Character
 	if not character then
 		table.insert(links, who.CharacterAdded:Connect(function()
-			begin(userId)
+			begin(userId, loud)
 		end))
 		return
 	end
@@ -155,12 +193,21 @@ local function begin(userId)
 			return
 		end
 		if mine then
+			-- LockFirstPerson prende o mouse no centro, e o teclado precisa do ponteiro solto. A
+			-- escrita vem DEPOIS do módulo de câmera, pelo mesmo motivo que a da vista.
+			if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			end
 			aim(delta)
 		end
 		local target = PhoneConfig.Pose(anchorOf(face))
 		pose = (pose or part.CFrame):Lerp(target, 1 - math.exp(-PhoneConfig.HandsetSmoothing * delta))
 		part.CFrame = pose
 	end)
+
+	if loud then
+		Sfx.Play("PhonePick", part)
+	end
 
 	if who ~= player then
 		return
@@ -170,13 +217,42 @@ local function begin(userId)
 	cameraMode = player.CameraMode
 	player.CameraMode = Enum.CameraMode.LockFirstPerson
 
+	-- Linha que ENTROU já vem com o outro lado do jogo: não há o que discar, e o visor abre com o
+	-- nome de quem ligou. Vazio é linha de saída, e aí vale o teclado.
+	local origin = model:GetAttribute(PhoneConfig.CallerAttribute)
+	PhoneDial.Open(model, PhoneConfig.Callers[origin])
+
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return
 	end
 
+	-- Mesma lógica do posto do monitor: anda até a cadeira e senta. A vista é fixa em cima do
+	-- teclado, e de pé o jogador sai dela andando sem perceber.
+	local chair = SeatConfig.Find(PhoneConfig.SeatName)
+	SeatConfig.Take(chair, humanoid)
+
+	-- O caminho até a cadeira É andar, e andar é o que cancela: sem esta janela de graça a chamada
+	-- se desligava no primeiro passo em direção ao assento. Sentar fecha a janela na hora; o prazo
+	-- fecha para quem nunca chega lá, e a partir daí mover cancela como antes.
+	local settled = false
+	task.delay(PhoneConfig.SeatWait, function()
+		settled = true
+	end)
+
+	table.insert(
+		links,
+		humanoid:GetPropertyChangedSignal("SeatPart"):Connect(function()
+			if humanoid.SeatPart == chair then
+				settled = true
+			elseif settled then
+				hangUp()
+			end
+		end)
+	)
+
 	table.insert(links, humanoid.Running:Connect(function(speed)
-		if speed > PhoneConfig.CancelSpeed then
+		if settled and speed > PhoneConfig.CancelSpeed then
 			hangUp()
 		end
 	end))
@@ -188,10 +264,10 @@ local function begin(userId)
 	table.insert(links, humanoid.Died:Connect(hangUp))
 end
 
-function apply()
+function apply(loud)
 	local userId = model:GetAttribute(PhoneConfig.UserAttribute)
 	if type(userId) == "number" and userId ~= 0 then
-		begin(userId)
+		begin(userId, loud)
 	else
 		stop()
 	end
@@ -210,8 +286,23 @@ local function bind(target)
 	model = target
 	handset = nil
 	home = nil
-	modelLink = model:GetAttributeChangedSignal(PhoneConfig.UserAttribute):Connect(apply)
-	apply()
+	modelLink = model:GetAttributeChangedSignal(PhoneConfig.UserAttribute):Connect(function()
+		apply(true)
+	end)
+
+	-- O Model velho levou o Sound do toque junto ao ser destruído; a alça sobrevivendo faria o
+	-- syncRing achar que ainda está tocando e nunca mais acender.
+	if ringing then
+		ringing:Destroy()
+		ringing = nil
+	end
+	if ringLink then
+		ringLink:Disconnect()
+	end
+	ringLink = model:GetAttributeChangedSignal(PhoneConfig.RingingAttribute):Connect(syncRing)
+
+	apply(false)
+	syncRing()
 end
 
 function PhoneController.Start()

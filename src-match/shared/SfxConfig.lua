@@ -1,6 +1,7 @@
 -- Catálogo de efeitos sonoros do Match. Id é o asset; Volume o ganho; Speed o PlaybackSpeed, que é
 -- o que faz a mesma gravação servir de tecla leve e de tecla pesada. Range só vale em som de mundo,
--- preso na peça — em som de UI a engine ignora.
+-- preso na peça — em som de UI a engine ignora. Region é o trecho do arquivo que toca, em s: serve
+-- para pular silêncio de cabeça e para cortar o rabo. A chave sem ela toca a gravação inteira.
 -- Todos são grátis da Creator Store. `Loja` é a página, para trocar o Id ouvindo o candidato.
 local SfxConfig = {
 	-- Interface do monitor. A tecla física `Power` tem gravação própria: ela é a única que afunda no
@@ -81,6 +82,52 @@ local SfxConfig = {
 	-- levaria o som junto; e o som é só de quem pegou, como a coleta inteira.
 	FlashlightPickup = { Id = 3834495137, Volume = 0.5 },
 	ManualPickup = { Id = 2886410788, Volume = 0.5 },
+
+	-- Telefone da sala. Tirar do gancho e devolver saem do fone, e todo cliente os toca: o aparelho
+	-- sobe ao rosto na tela de todos. PhoneRing ainda não tem gatilho.
+	-- Quase toda gravação do telefone abre com silêncio, e é ele que a Region corta: medido por
+	-- PlaybackLoudness, o som entra em 0,115s no toque e 0,366s no pousar. PhonePick é a exceção,
+	-- entra em 0,017s — e a região dele também é o RELÓGIO do tom de espera, que entra quando ele sai.
+	-- O toque chama de longe, e por isso tem o maior Range do aparelho. Em laço porque telefone
+	-- tocando não para sozinho: quem o corta é atender. Ainda sem gatilho, e sem Region medida.
+	PhoneRing = { Id = 9117305259, Volume = 0.9, Range = 35, Looped = true },
+	PhonePick = { Id = 9125716553, Volume = 0.9, Range = 25, Region = NumberRange.new(0, 0.4) },
+	PhoneDrop = { Id = 9117155140, Volume = 0.9, Range = 25, Region = NumberRange.new(0.35, 1.6) },
+
+	-- Aguardando discagem: entra quando o fone acaba de subir e morre na primeira tecla. Em laço,
+	-- porque esperar não tem duração. PhoneReset é o número abandonado no meio, e a região dele é o
+	-- relógio da volta do tom de espera.
+	PhoneWaiting = { Id = 9119453203, Volume = 0.9, Range = 20, Region = NumberRange.new(0.2, 5.2), Looped = true },
+	PhoneReset = { Id = 9113665420, Volume = 0.9, Range = 20, Region = NumberRange.new(0, 1) },
+
+	-- Fala do outro lado, uma chave por número da lista telefônica e uma por quem liga de fora.
+	-- Presa à chamada, não ao relógio: desligar corta, e gravação longa não esbarra no teto do
+	-- Debris — a do desconhecido tem 41s, quatro vezes esse teto.
+	PhoneManager = { Id = 9125987169, Volume = 0.9, Range = 20 },
+	PhoneCallManager = { Id = 9119452434, Volume = 0.9, Range = 20 },
+	PhoneCallUnknown = { Id = 9112853287, Volume = 0.9, Range = 20 },
+
+	-- A chamada em curso: o tom de linha abre, e o chamando entra em laço até desligar. `Looped`
+	-- respeita a Region (medido): o arquivo do chamando tem quatro rajadas espalhadas em 21s, e a
+	-- região devolve só a primeira, repetindo a cada 3s.
+	PhoneDialTone = { Id = 9119452434, Volume = 7, Range = 20, Region = NumberRange.new(0, 1.5) },
+	PhoneVoice = { Id = 9117145120, Volume = 0.6, Range = 20, Region = NumberRange.new(0, 3), Looped = true },
+
+	-- Uma gravação por tecla, de 1 a 9, cada uma com o próprio silêncio de cabeça — de 0,033s na 3 a
+	-- 0,101s na 8. O aparelho não tem gravação de 0, * e #: a da tecla 1 serve de base, com a altura
+	-- trocada para que nenhuma soe igual a ela nem entre si.
+	PhoneKey1 = { Id = 9113742812, Volume = 1.2, Range = 15, Region = NumberRange.new(0.085, 1) },
+	PhoneKey2 = { Id = 9113742939, Volume = 1.2, Range = 15, Region = NumberRange.new(0.07, 1) },
+	PhoneKey3 = { Id = 9113742941, Volume = 1.2, Range = 15, Region = NumberRange.new(0.02, 1) },
+	PhoneKey4 = { Id = 9113742948, Volume = 1.2, Range = 15, Region = NumberRange.new(0.055, 1) },
+	PhoneKey5 = { Id = 9113742238, Volume = 1.2, Range = 15, Region = NumberRange.new(0.02, 1) },
+	PhoneKey6 = { Id = 9113743074, Volume = 1.2, Range = 15, Region = NumberRange.new(0.055, 1) },
+	PhoneKey7 = { Id = 9113743081, Volume = 1.2, Range = 15, Region = NumberRange.new(0.085, 1) },
+	PhoneKey8 = { Id = 9113743258, Volume = 1.2, Range = 15, Region = NumberRange.new(0.085, 1) },
+	PhoneKey9 = { Id = 9113743252, Volume = 1.2, Range = 15, Region = NumberRange.new(0.07, 1) },
+	PhoneKey0 = { Id = 9113742812, Volume = 1.2, Speed = 0.82, Range = 15, Region = NumberRange.new(0.085, 1) },
+	PhoneKeyStar = { Id = 9113742812, Volume = 1.2, Speed = 1.27, Range = 15, Region = NumberRange.new(0.085, 1) },
+	PhoneKeyHash = { Id = 9113742812, Volume = 1.2, Speed = 0.66, Range = 15, Region = NumberRange.new(0.085, 1) },
 }
 
 return SfxConfig

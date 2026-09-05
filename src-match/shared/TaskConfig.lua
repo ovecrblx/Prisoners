@@ -26,9 +26,11 @@ TaskConfig.Scope = {
 }
 
 -- O que faz a task se dar por cumprida. Cada tipo é lido por um serviço: CollectItem é do
--- ItemService, que avisa quem pegou o quê.
+-- ItemService, que avisa quem pegou o quê; AnswerPhone é do PhoneService, que avisa quem tirou o
+-- fone do gancho com o aparelho tocando. Gatilho sem chave casa com Trigger sem ItemId.
 TaskConfig.Trigger = {
 	CollectItem = "CollectItem",
+	AnswerPhone = "AnswerPhone",
 }
 
 TaskConfig.DrawPerShift = 4 -- teto por turno; sorteia menos se não houver o que sortear
@@ -59,6 +61,16 @@ TaskConfig.List = {
 			.. "pode carregá-la.",
 		Trigger = { Type = "CollectItem", ItemId = "Flashlight" },
 		Highlight = { ItemId = "Flashlight" },
+	},
+	{
+		Id = "answer_phone",
+		Kind = "Loop",
+		Scope = "Class",
+		Classes = { "guard_class" },
+		Title = "Atenda o telefone",
+		Description = "O telefone da delegacia pode tocar durante o turno, e pode não tocar. "
+			.. "Atender é da guarda — quem está do outro lado nem sempre se identifica.",
+		Trigger = { Type = "AnswerPhone" },
 	},
 }
 

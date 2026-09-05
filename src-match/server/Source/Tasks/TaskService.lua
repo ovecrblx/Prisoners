@@ -11,6 +11,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ItemService = require(script.Parent.Parent:WaitForChild("Items"):WaitForChild("ItemService"))
+local PhoneService = require(script.Parent.Parent:WaitForChild("World"):WaitForChild("PhoneService"))
 local Remotes = require(script.Parent.Parent:WaitForChild("Util"):WaitForChild("Remotes"))
 local ShiftService = require(script.Parent.Parent:WaitForChild("Shift"):WaitForChild("ShiftService"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -170,6 +171,11 @@ function TaskService.Init()
 
 	ItemService.OnCollect(function(player, itemId)
 		onTrigger(player, TaskConfig.Trigger.CollectItem, itemId)
+	end)
+
+	-- Sem chave: quem atendeu cumpre a task de atender, seja quem for do outro lado.
+	PhoneService.OnAnswer(function(player)
+		onTrigger(player, TaskConfig.Trigger.AnswerPhone, nil)
 	end)
 
 	ShiftService.OnShift(function(shift)

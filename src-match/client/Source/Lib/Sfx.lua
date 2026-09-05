@@ -26,6 +26,7 @@ local FIT_MIN, FIT_MAX = 0.5, 2
 local RANGE = 50
 local RANGE_MIN = 2
 
+
 local lastAt = {}
 
 local function build(entry, adornee)
@@ -33,6 +34,14 @@ local function build(entry, adornee)
 	sound.SoundId = "rbxassetid://" .. entry.Id
 	sound.Volume = entry.Volume or 0.5
 	sound.PlaybackSpeed = entry.Speed or 1
+
+	-- A engine toca só o trecho e cala no fim dele. A página do Sound não descreve `PlaybackRegion`;
+	-- medido, o som começa em 0,018s com a região abrindo em 0,8 e o último sinal cai no fim dela.
+	if entry.Region then
+		sound.PlaybackRegionsEnabled = true
+		sound.PlaybackRegion = entry.Region
+	end
+
 	sound.RollOffMaxDistance = entry.Range or RANGE
 	sound.RollOffMinDistance = RANGE_MIN
 	sound.RollOffMode = Enum.RollOffMode.Linear
