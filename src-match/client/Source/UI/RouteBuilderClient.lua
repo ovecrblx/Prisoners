@@ -624,15 +624,28 @@ local function attachMoveHandles(id: string)
 		setStatus(if moveChain > 0
 			then string.format("ponto movido · %d ponto(s) acompanharam", moveChain)
 			else string.format("ponto movido para (%.0f, %.0f, %.0f)", ground.X, ground.Y, ground.Z))
-		task.spawn(function()
-			local folder = Workspace:FindFirstChild(NpcConfig.NODE_FOLDER_NAME)
-			if folder then
-				folder:WaitForChild(id2, 3)
-			end
-			if mode == "Move" and moveTargetId == id2 then
-				attachMoveHandles(id2)
-			end
-		end)
+		-- A peça velha ainda existe quando o pedido sai, então WaitForChild voltaria nela e a push do
+		-- servidor a destruiria com as alças em cima. Espera a peça NOVA nascer.
+		local folder = Workspace:FindFirstChild(NpcConfig.NODE_FOLDER_NAME)
+		if folder then
+			local rebuilt: RBXScriptConnection? = nil
+			rebuilt = folder.ChildAdded:Connect(function(child: Instance)
+				if child.Name ~= id2 then
+					return
+				end
+				(rebuilt :: RBXScriptConnection):Disconnect()
+				rebuilt = nil
+				if mode == "Move" and moveTargetId == id2 then
+					attachMoveHandles(id2)
+				end
+			end)
+			task.delay(3, function()
+				if rebuilt then
+					rebuilt:Disconnect()
+					rebuilt = nil
+				end
+			end)
+		end
 	end)
 end
 
