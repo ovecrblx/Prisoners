@@ -8,7 +8,8 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
 -- Caminho no place: PlayerGui.MainGui.Frame_Info.Frame.{Text, Input}. Input guarda as plaquinhas,
--- uma por tecla, cada uma chamada Key, com o glifo em Frame.Key. A primeira vem autorada e nunca
+-- uma por tecla, cada uma chamada Key, com o glifo em Frame.Key e a chapa em Frame.RoundFrame. A
+-- primeira vem autorada e nunca
 -- morre; as outras são clones dela.
 local GUI_NAME = "MainGui"
 local FRAME_NAME = "Frame_Info"
@@ -17,6 +18,11 @@ local TEXT_NAME = "Text"
 local SLOT_NAME = "Input"
 local CHIP_NAME = "Key"
 local GLYPH_PATH = { "Frame", "Key" }
+local PLATE_PATH = { "Frame", "RoundFrame" }
+
+-- Cor da chapa enquanto o que a tecla comanda está ligado. A de repouso não está aqui: sai do
+-- place, lida no Start, então recolorir a chapa no Studio continua valendo.
+local LIT_COLOR = Color3.fromRGB(203, 203, 203)
 
 local WAIT_TIMEOUT = 20 -- segundos esperando a GUI publicada no PlayerGui
 local HINT_TIME = 20 -- segundos de dica na tela antes de sair sozinha
@@ -27,6 +33,7 @@ local panel
 local holder
 local title
 local template
+local restColor
 local slots = {}
 local token = 0
 
@@ -41,6 +48,11 @@ end
 local function glyphOf(slot)
 	local node = nodeIn(slot, GLYPH_PATH)
 	return if node and node:IsA("TextLabel") then node else nil
+end
+
+local function plateOf(slot)
+	local node = nodeIn(slot, PLATE_PATH)
+	return if node and node:IsA("GuiObject") then node else nil
 end
 
 -- LayoutOrder acompanha a ordem da chamada porque o UIListLayout do Input ordena por ela.
@@ -86,6 +98,7 @@ function KeyHint.Show(text, keys)
 		if mark then
 			mark.Text = face
 		end
+		KeyHint.SetOn(false, index)
 	end
 	title.Text = text
 	panel.Visible = true
@@ -97,6 +110,16 @@ function KeyHint.Show(text, keys)
 			panel.Visible = false
 		end
 	end)
+end
+
+-- A chapa da tecla acompanha o estado do que ela comanda: acesa em LIT_COLOR, apagada na cor que
+-- veio do place. Sem índice, é a primeira plaquinha da linha.
+function KeyHint.SetOn(value, index)
+	local slot = slots[index or 1]
+	local plate = slot and plateOf(slot)
+	if plate and restColor then
+		plate.BackgroundColor3 = if value then LIT_COLOR else restColor
+	end
 end
 
 -- Quem apaga o HUD em volta precisa poupar esta linha, e a identifica por instância.
@@ -124,6 +147,9 @@ function KeyHint.Start()
 		warn("[KeyHint] " .. GUI_NAME .. "." .. FRAME_NAME .. "." .. ROW_NAME .. " incompleto; sem dica de tecla.")
 		return
 	end
+
+	local plate = plateOf(first)
+	restColor = plate and plate.BackgroundColor3
 
 	template = first:Clone()
 	slots[1] = first

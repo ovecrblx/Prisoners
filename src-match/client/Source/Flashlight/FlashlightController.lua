@@ -182,6 +182,7 @@ local function setPower(value)
 		return
 	end
 	lit = value
+	KeyHint.SetOn(value)
 	local character = player.Character
 	if character then
 		ItemView.SetPower(character, ITEM_ID, value)
@@ -221,6 +222,7 @@ local function setHand(value)
 	end
 	if value then
 		KeyHint.Show(FlashlightConfig.PowerHint, FlashlightConfig.PowerKey)
+		KeyHint.SetOn(lit)
 		ItemHold.Claim(ITEM_ID)
 	else
 		KeyHint.Hide()
