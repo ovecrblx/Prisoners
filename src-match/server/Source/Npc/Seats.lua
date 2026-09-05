@@ -1,7 +1,6 @@
 --!strict
 -- Os assentos do mapa: quais existem, qual está livre e como sentar e levantar. Livre é
--- `Occupant == nil` e `Disabled == false`; sair é destruir o SeatWeld, que a engine parenteia no
--- assento e não no corpo.
+-- `Occupant == nil`; sair é destruir o SeatWeld, que a engine parenteia no assento e não no corpo.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -12,6 +11,10 @@ local Seats = {}
 local WELD_NAME = "SeatWeld"
 
 local warnedMissing = false
+
+local list: { Seat } = {}
+local watched: Instance? = nil
+local links: { RBXScriptConnection } = {}
 
 local function folder(): Instance?
 	local current: Instance? = Workspace
@@ -28,25 +31,64 @@ local function folder(): Instance?
 	return current
 end
 
-function Seats.IsFree(seat: Seat): boolean
-	return seat.Parent ~= nil and not seat.Disabled and seat.Occupant == nil
+local function track(item: Instance)
+	if item:IsA("Seat") then
+		table.insert(list, item)
+	end
 end
 
--- Assento livre mais próximo dentro de `radius`, ignorando os de `skip`. Empate pelo nome completo
--- para dois NPCs no mesmo ponto não sortearem alvos diferentes a cada tick.
-function Seats.Nearest(position: Vector3, radius: number, skip: { [Instance]: boolean }?): Seat?
+local function untrack(item: Instance)
+	if not item:IsA("Seat") then
+		return
+	end
+	local index = table.find(list, item)
+	if index then
+		table.remove(list, index)
+	end
+end
+
+-- Nenhum Seat é filho direto da pasta: eles moram dentro dos Models do móvel (`Home.Seat1`,
+-- `Sec_Seat.Seat`), então a varredura é por descendente. Ela roda uma vez e os sinais da pasta
+-- mantêm a lista — a busca é a 5 Hz POR NPC, e refazer GetDescendants ali aloca uma tabela por
+-- corpo por tick. A ordem da varredura é estável, então dois NPCs no mesmo ponto empatam no mesmo.
+local function seats(): { Seat }
 	local root = folder()
-	if not root then
-		return nil
+	if not root or watched == root then
+		return list
 	end
 
+	for _, link in ipairs(links) do
+		link:Disconnect()
+	end
+	table.clear(links)
+	table.clear(list)
+
+	watched = root
+	for _, item in ipairs(root:GetDescendants()) do
+		track(item)
+	end
+	table.insert(links, root.DescendantAdded:Connect(track))
+	table.insert(links, root.DescendantRemoving:Connect(untrack))
+
+	return list
+end
+
+-- `Disabled` NÃO entra: o SeatService o liga em TODO assento do cenário para matar o sentar por
+-- encostar, e com isso ele deixou de dizer se o lugar está vago. Medido: com ele ligado, `Seat:Sit`
+-- à mão continua sentando — que é por onde o NPC e o prompt do jogador ocupam o lugar.
+function Seats.IsFree(seat: Seat): boolean
+	return seat.Parent ~= nil and seat.Occupant == nil
+end
+
+-- Assento livre mais próximo dentro de `radius`, ignorando os de `skip`.
+function Seats.Nearest(position: Vector3, radius: number, skip: { [Instance]: boolean }?): Seat?
 	local best: Seat? = nil
 	local bestDistance = radius
-	for _, child in ipairs(root:GetChildren()) do
-		if child:IsA("Seat") and Seats.IsFree(child) and not (skip and skip[child]) then
-			local distance = (child.Position - position).Magnitude
+	for _, seat in ipairs(seats()) do
+		if Seats.IsFree(seat) and not (skip and skip[seat]) then
+			local distance = (seat.Position - position).Magnitude
 			if distance < bestDistance then
-				best = child
+				best = seat
 				bestDistance = distance
 			end
 		end

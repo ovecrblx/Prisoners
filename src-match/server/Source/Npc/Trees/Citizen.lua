@@ -136,9 +136,9 @@ function Citizen.Build(): BehaviourTree.Node
 		local data = board(agent)
 		local now = os.clock()
 
-		-- O assento tem CanTouch, então a engine senta o corpo que passa por cima. Sentada que a
-		-- árvore não agendou também vira descanso — mas nunca durante a carência, senão levantar
-		-- rearmaria o descanso no tick seguinte e o corpo nunca sairia.
+		-- Sentada que a árvore não agendou também vira descanso. O toque desligado deixou isso raro,
+		-- mas o ramo fica: nunca durante a carência, senão levantar rearmaria o descanso no tick
+		-- seguinte e o corpo nunca sairia.
 		local seat = Seats.SeatOf(agent)
 		if seat and data.restSeat ~= seat and now >= data.seatReadyAt then
 			data.restSeat = seat
