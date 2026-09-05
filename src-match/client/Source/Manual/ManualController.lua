@@ -388,7 +388,7 @@ local function enterUse()
 	-- câmera -> personagem que AutoRotate fecha.
 	local baseYaw = select(2, root.CFrame:ToOrientation())
 	workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-	table.insert(use.links, RunService.RenderStepped:Connect(function(delta)
+	table.insert(use.links, RunService.PreRender:Connect(function(delta)
 		local handle = use.handle
 		if character.Parent == nil or root.Parent == nil or not handle or handle.Parent == nil then
 			setHand(false)
