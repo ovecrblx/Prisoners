@@ -94,8 +94,12 @@ local function buildCharacter(player, template)
 	end
 
 	rig:PivotTo(spawnCFrame())
+	local previous = player.Character
 	rig.Parent = workspace
 	player.Character = rig
+	if previous and previous ~= rig then
+		previous:Destroy()
+	end
 
 	local humanoid = rig:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -126,6 +130,18 @@ function ClassMorphService.Init()
 end
 
 function ClassMorphService.Start()
+	-- A engine não destrói o Player nem o corpo de quem saiu, e conexão neles fica de pé. Depois dos
+	-- outros PlayerRemoving, que ainda leem o jogador.
+	Players.PlayerRemoving:Connect(function(player)
+		local character = player.Character
+		task.defer(function()
+			if character then
+				character:Destroy()
+			end
+			player:Destroy()
+		end)
+	end)
+
 	Players.PlayerAdded:Connect(function(player)
 		task.spawn(spawnFor, player)
 	end)
