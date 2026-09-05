@@ -367,6 +367,7 @@ local function exitUse()
 	restoreAccessories()
 	restoreHeads()
 
+	KeyHint.Hide()
 	maskHud(false)
 	ItemHud.SetVisible(true)
 end
@@ -394,6 +395,7 @@ local function enterUse()
 	ItemHold.Claim(ITEM_ID)
 
 	maskHud(true)
+	KeyHint.Show(ManualConfig.FlipHint, { ManualConfig.FlipPrevKey, ManualConfig.FlipNextKey })
 	ItemHud.SetVisible(false)
 	hideHeads()
 	hideAccessories()
@@ -457,6 +459,17 @@ local function enterUse()
 			end
 		end))
 	end
+
+	table.insert(use.links, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode == ManualConfig.FlipPrevKey then
+			stepPage(-1)
+		elseif input.KeyCode == ManualConfig.FlipNextKey then
+			stepPage(1)
+		end
+	end))
 
 	-- Fora da calibração a vista é a de ManualConfig e nada a move: o clique só vira página.
 	if not ManualConfig.CalibrateCamera then

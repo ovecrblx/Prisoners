@@ -92,4 +92,10 @@ ManualConfig.IconId = "rbxassetid://106157472383152"
 ManualConfig.HotKey = Enum.KeyCode.One -- alterna cintura/mão; rótulo no slot acompanha
 ManualConfig.KeyLabel = "1"
 
+-- Virar página no teclado, só com o livro aberto. As setas do toque continuam fazendo o mesmo
+-- passo, e a dica de tecla mostra as duas juntas, na ordem em que estão aqui.
+ManualConfig.FlipPrevKey = Enum.KeyCode.Q
+ManualConfig.FlipNextKey = Enum.KeyCode.E
+ManualConfig.FlipHint = "Flip Page"
+
 return ManualConfig
