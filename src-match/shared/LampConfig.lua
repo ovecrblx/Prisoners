@@ -66,7 +66,7 @@ LampConfig.ButtonDirection = Enum.EasingDirection.Out
 LampConfig.PromptDistance = 8
 LampConfig.PromptOffset = Vector2.new(0, 40)
 LampConfig.PromptClickable = false
-LampConfig.PromptTitle = "Switch"
+LampConfig.PromptTitle = "Light Switch"
 
 -- O cenário é publicado à mão e a caixa do nome não tem cobertura de teste.
 function LampConfig.Folder(path, timeout)

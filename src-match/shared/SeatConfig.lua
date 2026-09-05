@@ -28,7 +28,7 @@ SeatConfig.Titles = {
 	sec_seat = "Chair",
 	home = "Couch",
 }
-SeatConfig.DefaultTitle = "Seat"
+SeatConfig.DefaultTitle = "Chair"
 
 SeatConfig.FolderWait = 20
 
