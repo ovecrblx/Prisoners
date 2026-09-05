@@ -165,8 +165,8 @@ function PanelTheme.MakeDraggable(handle: GuiObject, onStart: (() -> ())?, onDel
 	end
 end
 
--- Alça no canto inferior direito. ASSUME a janela ancorada em (1, 0.5): a posição é compensada
--- (X inteiro, Y/2) pra o canto arrastado seguir o cursor.
+-- Alça no canto inferior direito. A posição é compensada pelo AnchorPoint da janela, para o canto
+-- arrastado seguir o cursor com qualquer âncora.
 function PanelTheme.ResizeGrip(
 	window: GuiObject,
 	minSize: Vector2,
@@ -191,7 +191,7 @@ function PanelTheme.ResizeGrip(
 	local startPos = Vector2.zero
 	local moved = Vector2.zero
 
-	PanelTheme.MakeDraggable(grip, function()
+	local release = PanelTheme.MakeDraggable(grip, function()
 		startSize = window.AbsoluteSize
 		startPos = Vector2.new(window.Position.X.Offset, window.Position.Y.Offset)
 		moved = Vector2.zero
@@ -201,16 +201,18 @@ function PanelTheme.ResizeGrip(
 		local h = math.clamp(startSize.Y + moved.Y, minSize.Y, maxSize.Y)
 		local grewX, grewY = w - startSize.X, h - startSize.Y
 		window.Size = UDim2.fromOffset(w, h)
+		local anchor = window.AnchorPoint
 		window.Position = UDim2.new(
 			window.Position.X.Scale,
-			startPos.X + grewX,
+			startPos.X + grewX * anchor.X,
 			window.Position.Y.Scale,
-			startPos.Y + grewY / 2
+			startPos.Y + grewY * anchor.Y
 		)
 		if onResized then
 			onResized()
 		end
 	end)
+	grip.Destroying:Once(release)
 
 	return grip
 end
