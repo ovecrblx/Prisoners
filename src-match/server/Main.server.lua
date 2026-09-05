@@ -5,6 +5,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local Source = ServerScriptService:WaitForChild("Source")
 local loadedServices = {}
+local healthy = true
 
 local function LoadModules(folder)
 	for _, item in ipairs(folder:GetChildren()) do
@@ -17,6 +18,7 @@ local function LoadModules(folder)
 				end
 			else
 				warn("[Boot] falha ao carregar " .. item.Name .. ": " .. tostring(result))
+				healthy = false
 			end
 		elseif item:IsA("Folder") then
 			LoadModules(item)
@@ -26,7 +28,7 @@ end
 
 LoadModules(Source)
 
-ServerScriptService:SetAttribute("BootHealthy", true)
+ServerScriptService:SetAttribute("BootHealthy", healthy)
 
 for _, service in ipairs(loadedServices) do
 	if type(service.Init) == "function" then
