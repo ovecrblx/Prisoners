@@ -42,6 +42,7 @@ local hangUpRemote
 local links = {}
 local render
 local mine = false
+local wide = false
 local pose
 local cameraMode = Enum.CameraMode.Classic
 local token = 0
@@ -73,6 +74,7 @@ end
 
 local function stop()
 	token += 1
+	wide = false
 
 	local ran = render
 	if render then
@@ -151,14 +153,17 @@ end
 
 -- Vista de quem atende, chegando ao enquadramento por percurso e não por corte. Em Scriptable o
 -- módulo de câmera larga o volante, e o CameraLimit também — ele só aperta Custom.
+-- São duas: em cima do teclado enquanto se digita, e recuada com o número cheio. A troca corre pelo
+-- mesmo Lerp, então o recuo é o mesmo percurso, só com outro destino.
 local function aim(delta)
 	local camera = Workspace.CurrentCamera
 	if not camera then
 		return
 	end
 
+	local wanted = if wide then PhoneConfig.CallView() else PhoneConfig.View()
 	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = camera.CFrame:Lerp(PhoneConfig.View(), 1 - math.exp(-PhoneConfig.CameraSmoothing * delta))
+	camera.CFrame = camera.CFrame:Lerp(wanted, 1 - math.exp(-PhoneConfig.CameraSmoothing * delta))
 end
 
 -- `loud` separa a transição de quem acabou de atender do retrato que o streaming ou a entrada tardia
@@ -228,7 +233,9 @@ local function begin(userId, loud)
 	-- Linha que ENTROU já vem com o outro lado do jogo: não há o que discar, e o visor abre com o
 	-- nome de quem ligou. Vazio é linha de saída, e aí vale o teclado.
 	local origin = model:GetAttribute(PhoneConfig.CallerAttribute)
-	PhoneDial.Open(model, PhoneConfig.Callers[origin])
+	PhoneDial.Open(model, PhoneConfig.Callers[origin], function(active)
+		wide = active
+	end)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then

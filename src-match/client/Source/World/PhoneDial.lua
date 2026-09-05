@@ -28,6 +28,7 @@ local tweens = {}
 
 local screen
 local label
+local framing
 local labelHome
 local calling
 local waiting
@@ -65,6 +66,14 @@ local function silence()
 	if calling then
 		calling:Destroy()
 		calling = nil
+	end
+end
+
+-- A vista do número cheio é do PhoneController: daqui sai só o aviso de que o campo encheu, e o de
+-- que ele recomeçou. Requerer o controlador aqui fecharia ciclo — é ele que requer este módulo.
+local function frame(active)
+	if framing then
+		framing(active)
 	end
 end
 
@@ -193,7 +202,11 @@ local function run(mark, caller)
 	end
 
 	while token == mark do
-		if not (enter(mark) and confirm(mark)) then
+		if not enter(mark) then
+			return
+		end
+		frame(true)
+		if not confirm(mark) then
 			return
 		end
 
@@ -219,6 +232,7 @@ local function run(mark, caller)
 
 		digits = ""
 		touched = false
+		frame(false)
 		waitTone(mark, 0)
 	end
 end
@@ -269,7 +283,7 @@ local function bindPad(pad)
 	end
 end
 
-function PhoneDial.Open(model, caller)
+function PhoneDial.Open(model, caller, onFrame)
 	PhoneDial.Close()
 
 	local pad = PhoneConfig.Child(model, PhoneConfig.PadName)
@@ -286,6 +300,7 @@ function PhoneDial.Open(model, caller)
 	token += 1
 	digits = ""
 	touched = false
+	framing = onFrame
 	bindPad(pad)
 
 	local mark = token
@@ -304,6 +319,7 @@ function PhoneDial.Close()
 	token += 1
 	typing = false
 	touched = false
+	framing = nil
 	hush()
 
 	silence()

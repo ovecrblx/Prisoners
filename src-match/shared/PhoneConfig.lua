@@ -44,7 +44,7 @@ PhoneConfig.SeatName = "Sec_Seat_1"
 -- studs, com X à direita, Y para cima e Z para trás: Z negativo é à frente da vista. Ângulos em
 -- graus, ordem Y-X-Z igual ao campo Orientation do Studio, não a de CFrame.Angles. Preso à câmera, o
 -- fone acompanha o giro horizontal e o vertical, e fica parado na tela de quem está na linha.
-PhoneConfig.HandsetOffset = Vector3.new(-0.95, 0.09, -1.3)
+PhoneConfig.HandsetOffset = Vector3.new(-1, 0.5, -1.75)
 PhoneConfig.HandsetAngles = Vector3.new(60, 45, 180)
 
 -- Percurso do fone até o rosto, em 1/s. Não é enfeite: o cabo é uma corrente de RopeConstraint
@@ -64,6 +64,12 @@ PhoneConfig.LinkPrefix = "Cord_Link"
 PhoneConfig.CameraPosition = Vector3.new(-2.8, 6.3, -38.7)
 PhoneConfig.CameraAngles = Vector3.new(-65, 90, 0)
 PhoneConfig.CameraSmoothing = 12
+
+-- Vista do número cheio: as seis casas fecharam, o teclado já não serve, e a câmera recua para
+-- mostrar quem está na linha. Mesma leitura da de cima, e mesmo Smoothing — o recuo é percurso, não
+-- corte. O campo recomeçando vazio devolve a vista do teclado.
+PhoneConfig.CameraCallPosition = Vector3.new(-1.25, 7, -38.5)
+PhoneConfig.CameraCallAngles = Vector3.new(-45, 90, 0)
 
 -- Cancela a chamada: studs/s de caminhada que já contam como sair do lugar. Pulo cancela sempre.
 -- SeatWait são os s de graça até chegar à cadeira — dentro deles andar não cancela, senão o passo
@@ -183,10 +189,17 @@ function PhoneConfig.Folder(timeout)
 	return node
 end
 
-function PhoneConfig.View()
-	local angles = PhoneConfig.CameraAngles
-	return CFrame.new(PhoneConfig.CameraPosition)
+local function frame(position, angles)
+	return CFrame.new(position)
 		* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
+end
+
+function PhoneConfig.View()
+	return frame(PhoneConfig.CameraPosition, PhoneConfig.CameraAngles)
+end
+
+function PhoneConfig.CallView()
+	return frame(PhoneConfig.CameraCallPosition, PhoneConfig.CameraCallAngles)
 end
 
 function PhoneConfig.Pose(anchor)
