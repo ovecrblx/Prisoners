@@ -30,6 +30,11 @@ SeatConfig.Titles = {
 }
 SeatConfig.DefaultTitle = "Chair"
 
+-- Assento de posto sai do monte enquanto o posto está em uso. Quem marca é o serviço dono do posto,
+-- e a marca replica: o prompt do jogador e a busca do NPC leem a mesma coisa. Sem ela a cadeira do
+-- telefone é oferecida a quem passa, e quem atende chega e a encontra cheia.
+SeatConfig.ReservedAttribute = "Reserved"
+
 SeatConfig.FolderWait = 20
 
 -- O cenário é publicado à mão e a caixa do nome não tem cobertura de teste.
@@ -83,6 +88,10 @@ function SeatConfig.Title(seat)
 	end
 
 	return SeatConfig.DefaultTitle
+end
+
+function SeatConfig.IsReserved(seat)
+	return seat:GetAttribute(SeatConfig.ReservedAttribute) == true
 end
 
 -- Ocupar um assento: anda até ele e senta À MÃO. Com o toque desligado o MoveTo sozinho já não

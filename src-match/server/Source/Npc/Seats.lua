@@ -1,10 +1,13 @@
 --!strict
--- Os assentos do mapa: quais existem, qual está livre e como sentar e levantar. Livre é
--- `Occupant == nil`; sair é destruir o SeatWeld, que a engine parenteia no assento e não no corpo.
+-- Os assentos do mapa: quais existem, qual está livre e como sentar e levantar. Livre é `Occupant`
+-- vazio e sem reserva de posto; sair é destruir o SeatWeld, que a engine parenteia no assento e não
+-- no corpo.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local NpcConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("NpcConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local NpcConfig = require(Shared:WaitForChild("NpcConfig"))
+local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 
 local Seats = {}
 
@@ -76,8 +79,10 @@ end
 -- `Disabled` NÃO entra: o SeatService o liga em TODO assento do cenário para matar o sentar por
 -- encostar, e com isso ele deixou de dizer se o lugar está vago. Medido: com ele ligado, `Seat:Sit`
 -- à mão continua sentando — que é por onde o NPC e o prompt do jogador ocupam o lugar.
+-- Assento de posto reservado também sai: a marca é do serviço dono do posto, e ela vale para o NPC
+-- pelo mesmo motivo que vale para o prompt do jogador.
 function Seats.IsFree(seat: Seat): boolean
-	return seat.Parent ~= nil and seat.Occupant == nil
+	return seat.Parent ~= nil and seat.Occupant == nil and not SeatConfig.IsReserved(seat)
 end
 
 -- Assento livre mais próximo dentro de `radius`, ignorando os de `skip`.

@@ -73,7 +73,7 @@ local function nearest(root)
 	local best, bestDist = nil, SeatConfig.SearchRange
 
 	for part in pairs(seats) do
-		if part.Parent and not part.Occupant then
+		if part.Parent and not part.Occupant and not SeatConfig.IsReserved(part) then
 			local dist = (part.Position - root.Position).Magnitude
 			if dist < bestDist then
 				best, bestDist = part, dist

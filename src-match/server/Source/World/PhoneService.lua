@@ -12,11 +12,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(script.Parent.Parent:WaitForChild("Util"):WaitForChild("Remotes"))
 local ShiftService = require(script.Parent.Parent:WaitForChild("Shift"):WaitForChild("ShiftService"))
-local PhoneConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("PhoneConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local PhoneConfig = require(Shared:WaitForChild("PhoneConfig"))
+local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 
 local rng = Random.new()
 
 local model
+local chair
 local prompt
 local user
 local links = {}
@@ -56,9 +59,14 @@ local function ownCord(player)
 	end
 end
 
+-- A cadeira do posto sai do monte enquanto a linha estiver ocupada: sem isso o prompt a oferece a
+-- quem passa e o NPC senta nela, e aí quem atendeu anda até lá e não tem onde sentar.
 local function publish(player)
 	user = player
 	model:SetAttribute(PhoneConfig.UserAttribute, if player then player.UserId else 0)
+	if chair then
+		chair:SetAttribute(SeatConfig.ReservedAttribute, player ~= nil)
+	end
 
 	if prompt then
 		prompt.Enabled = player == nil
@@ -113,6 +121,11 @@ local function release(player)
 		link:Disconnect()
 	end
 	table.clear(links)
+	chair = SeatConfig.Find(PhoneConfig.SeatName, PhoneConfig.ModelWait)
+	if not chair then
+		warn("[PhoneService] assento " .. PhoneConfig.SeatName .. " não encontrado; a cadeira não fica reservada.")
+	end
+
 	publish(nil)
 	ring(nil)
 	ownCord(nil)
