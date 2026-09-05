@@ -120,4 +120,8 @@ FlashlightConfig.KeyLabel = "2"
 FlashlightConfig.PowerKey = Enum.KeyCode.Q -- liga e desliga a luz, só com a lanterna na mão
 FlashlightConfig.PowerHint = "On/Off" -- dica de tecla no canto, em inglês nativo: a engine traduz
 
+-- Acionamentos da luz que a dica de tecla aguenta antes de sair de vez. Passou daqui, quem joga já
+-- sabe a tecla, e a dica não volta nesta partida — nem no respawn, que a conta é da partida.
+FlashlightConfig.HintToggleLimit = 5
+
 return FlashlightConfig

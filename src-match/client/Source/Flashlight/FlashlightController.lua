@@ -40,6 +40,11 @@ local equipped = false
 local inHand = false
 local lit = false
 
+-- Conta da partida, não da vida: o respawn não a zera, e sair da mão nem guardar a lanterna também
+-- não. Guardar aceso conta, porque acender aquilo foi o jogador quem fez.
+local powerCount = 0
+local hintRetired = false
+
 -- O skin em uso mora no Handle e o de reserva na pasta, então procurar só na pasta acha um só a
 -- partir da primeira troca. Os dois lugares valem.
 local function findSkin(model, handle, name)
@@ -182,7 +187,13 @@ local function setPower(value)
 		return
 	end
 	lit = value
-	KeyHint.SetOn(value)
+	powerCount += 1
+	if powerCount > FlashlightConfig.HintToggleLimit then
+		hintRetired = true
+		KeyHint.Hide()
+	else
+		KeyHint.SetOn(value)
+	end
 	local character = player.Character
 	if character then
 		ItemView.SetPower(character, ITEM_ID, value)
@@ -221,8 +232,10 @@ local function setHand(value)
 		end
 	end
 	if value then
-		KeyHint.Show(FlashlightConfig.PowerHint, FlashlightConfig.PowerKey)
-		KeyHint.SetOn(lit)
+		if not hintRetired then
+			KeyHint.Show(FlashlightConfig.PowerHint, FlashlightConfig.PowerKey)
+			KeyHint.SetOn(lit)
+		end
 		ItemHold.Claim(ITEM_ID)
 	else
 		KeyHint.Hide()
