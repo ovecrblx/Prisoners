@@ -126,11 +126,6 @@ local function release(player)
 		link:Disconnect()
 	end
 	table.clear(links)
-	chair = SeatConfig.Find(PhoneConfig.SeatName, PhoneConfig.ModelWait)
-	if not chair then
-		warn("[PhoneService] assento " .. PhoneConfig.SeatName .. " não encontrado; a cadeira não fica reservada.")
-	end
-
 	publish(nil)
 	ring(nil)
 end
@@ -188,6 +183,11 @@ function PhoneService.Start()
 	if not (base and base:IsA("BasePart")) then
 		warn("[PhoneService] " .. model:GetFullName() .. " sem " .. PhoneConfig.BaseName .. "; sem prompt.")
 		return
+	end
+
+	chair = SeatConfig.Find(PhoneConfig.SeatName, PhoneConfig.ModelWait)
+	if not chair then
+		warn("[PhoneService] assento " .. PhoneConfig.SeatName .. " não encontrado; a cadeira não fica reservada.")
 	end
 
 	freezeCord()
