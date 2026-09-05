@@ -213,6 +213,12 @@ local function load(player: Player): Record
 	end
 
 	local ok, raw = getStore():Load(keyFor(player))
+	-- O Load yielda: o segundo pedido do mesmo jogador não sobrescreve o registro que o primeiro já
+	-- entregou, e quem saiu no meio não volta para o cache depois do PlayerRemoving limpar.
+	local raced = cache[player.UserId]
+	if raced then
+		return raced
+	end
 	local source = if ok and type(raw) == "table" then raw else {}
 	local record: Record = {
 		dock = pruneDock(source.dock),
@@ -220,7 +226,9 @@ local function load(player: Player): Record
 		layouts = pruneLayouts(source.layouts),
 		marks = pruneMarks(source.marks),
 	}
-	cache[player.UserId] = record
+	if player.Parent then
+		cache[player.UserId] = record
+	end
 	return record
 end
 
