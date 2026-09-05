@@ -303,8 +303,8 @@ local function onTap()
 end
 
 -- O livro apaga o HUD em volta, mas não a linha de dica: ela mora no mesmo ScreenGui e é o que
--- ensina as teclas do livro. Por isso some quadro a quadro em vez de desligar o MainGui inteiro, e
--- volta só o que este apagou.
+-- ensina as teclas de virar página. Por isso some quadro a quadro em vez de desligar o MainGui
+-- inteiro, e volta só o que este apagou.
 local function maskHud(value)
 	local playerGui = player:FindFirstChild("PlayerGui")
 	local mainGui = playerGui and playerGui:FindFirstChild("MainGui")

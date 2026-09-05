@@ -24,8 +24,9 @@ local gui
 local panels = {}
 
 -- Toque sem mouse e sem teclado. O emulador do Studio move as três de uma vez, então o que vale no
--- aparelho vale no teste.
-local function isMobile()
+-- aparelho vale no teste. Publicada porque é ela que decide de quem é a vez: onde esta GUI
+-- liga, a dica de tecla do MainGui fica fora.
+function MobileHud.IsMobile()
 	return UserInputService.TouchEnabled
 		and not UserInputService.MouseEnabled
 		and not UserInputService.KeyboardEnabled
@@ -130,7 +131,7 @@ local function adopt(found)
 	end
 
 	-- Fora do toque a GUI existe e fica desligada: o mouse já tem tecla para tudo o que ela faz.
-	gui.Enabled = isMobile()
+	gui.Enabled = MobileHud.IsMobile()
 	for _, entry in pairs(panels) do
 		bind(entry)
 	end
@@ -196,7 +197,7 @@ function MobileHud.Start()
 	for _, name in ipairs({ "TouchEnabled", "MouseEnabled", "KeyboardEnabled" }) do
 		UserInputService:GetPropertyChangedSignal(name):Connect(function()
 			if gui and gui.Parent then
-				gui.Enabled = isMobile()
+				gui.Enabled = MobileHud.IsMobile()
 			end
 		end)
 	end

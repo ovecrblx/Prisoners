@@ -1,5 +1,7 @@
--- Dica de tecla no canto: MainGui.Frame_Info diz que teclas agem no que está em uso. Só em teclado
--- — no toque quem manda é o painel do MobileHud, e lá o botão já é a própria ação.
+-- Dica de tecla no canto: MainGui.Frame_Info diz que teclas agem no que está em uso. Só fora do
+-- aparelho de toque, e só com teclado: no toque quem manda é a MobileGui, e lá o botão já é a
+-- própria ação. Quem decide de quem é a vez é MobileHud.IsMobile, para as duas GUIs nunca
+-- aparecerem juntas nem sumirem juntas.
 -- É lembrete, não HUD: entra quando o item chega à mão e sai sozinha depois de HINT_TIME, com o
 -- item ainda lá. Guardar o item também a tira, antes do prazo.
 local KeyHint = {}
@@ -7,10 +9,11 @@ local KeyHint = {}
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
+local MobileHud = require(script.Parent:WaitForChild("MobileHud"))
+
 -- Caminho no place: PlayerGui.MainGui.Frame_Info.Frame.{Text, Input}. Input guarda as plaquinhas,
 -- uma por tecla, cada uma chamada Key, com o glifo em Frame.Key e a chapa em Frame.RoundFrame. A
--- primeira vem autorada e nunca
--- morre; as outras são clones dela.
+-- primeira vem autorada e nunca morre; as outras são clones dela.
 local GUI_NAME = "MainGui"
 local FRAME_NAME = "Frame_Info"
 local ROW_NAME = "Frame"
@@ -74,7 +77,7 @@ end
 -- Enquanto o item estiver na mão a dica pode voltar, então o prazo é reiniciado a cada chamada.
 -- `keys` é um KeyCode ou uma lista deles, na ordem em que aparecem na linha.
 function KeyHint.Show(text, keys)
-	if not (panel and UserInputService.KeyboardEnabled) then
+	if not (panel and UserInputService.KeyboardEnabled) or MobileHud.IsMobile() then
 		return
 	end
 
@@ -129,6 +132,9 @@ end
 -- Piscada de uma tecla: acende a chapa e devolve a cor de repouso sozinha. Toque em cima de toque
 -- reinicia o prazo em vez de empilhar, e um SetOn no meio cancela a devolução pendente.
 function KeyHint.Flash(index)
+	if not (panel and panel.Visible) then
+		return
+	end
 	local at = index or 1
 	KeyHint.SetOn(true, at)
 	local stamp = flashes[at]
@@ -178,6 +184,16 @@ function KeyHint.Start()
 	holder = box
 	title = label
 	panel.Visible = false
+
+	-- O aparelho muda em partida: teclado pareado num tablet, e o botão do emulador no Studio. Virou
+	-- toque, a MobileGui assume e esta linha sai na hora, sem esperar o prazo.
+	for _, name in ipairs({ "TouchEnabled", "MouseEnabled", "KeyboardEnabled" }) do
+		UserInputService:GetPropertyChangedSignal(name):Connect(function()
+			if MobileHud.IsMobile() then
+				KeyHint.Hide()
+			end
+		end)
+	end
 end
 
 return KeyHint
