@@ -69,11 +69,14 @@ function RouteData.ValidateNode(node: any, bounds: { center: Vector3, size: Vect
 	if type(node.order) ~= "number" or node.order ~= node.order or node.order < 0 or node.order > 1e6 then
 		return false, "order fora de 0..1e6"
 	end
-	if type(node.waitTime) ~= "number" or node.waitTime < 0 or node.waitTime > 60 then
+	if type(node.waitTime) ~= "number" or node.waitTime ~= node.waitTime or node.waitTime < 0 or node.waitTime > 60 then
 		return false, "waitTime fora de 0..60s"
 	end
-	if node.lookDirection ~= nil and typeof(node.lookDirection) ~= "Vector3" then
-		return false, "lookDirection não é Vector3"
+	if node.lookDirection ~= nil then
+		local look = node.lookDirection
+		if typeof(look) ~= "Vector3" or look.Magnitude ~= look.Magnitude or look.Magnitude == math.huge then
+			return false, "lookDirection não é Vector3 finito"
+		end
 	end
 	if node.senseRadius ~= nil then
 		if type(node.senseRadius) ~= "number" or node.senseRadius ~= node.senseRadius then
