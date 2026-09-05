@@ -16,7 +16,6 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
-local CameraConfig = require(Shared:WaitForChild("CameraConfig"))
 local PhoneConfig = require(Shared:WaitForChild("PhoneConfig"))
 local SeatConfig = require(Shared:WaitForChild("SeatConfig"))
 local PhoneDial = require(script.Parent:WaitForChild("PhoneDial"))
@@ -168,14 +167,14 @@ local function resolveHandset()
 	return part
 end
 
--- Quem atende vê pela câmera, e é nela que o fone fica preso: seguir a cabeça deixaria o aparelho
--- parado quando a vista sobe ou desce, porque a cabeça do personagem só acompanha o giro horizontal.
--- Para quem assiste não existe a câmera do outro, e aí vale a cabeça dele. A folga de primeira
--- pessoa cobre os quadros em que o zoom ainda está chegando ao rosto.
+-- Quem atende vê pela câmera, e é nela que o fone fica preso: a pose é autorada no espaço da vista,
+-- e é ela que decide qual lado da tela é a esquerda. Presa na cabeça, o lado passaria a ser o do
+-- corpo, e o fone trocaria de lado conforme o jogador tivesse parado virado para cá ou para lá.
+-- Para quem assiste não existe a câmera do outro, e aí vale a cabeça dele.
 local function anchorOf(face)
 	if mine then
 		local camera = Workspace.CurrentCamera
-		if camera and (camera.CFrame.Position - face.Position).Magnitude < CameraConfig.FirstPersonDistance then
+		if camera then
 			return camera.CFrame
 		end
 	end
@@ -240,7 +239,8 @@ local function begin(userId, loud)
 			end
 			aim(delta)
 		end
-		local target = PhoneConfig.Pose(anchorOf(face))
+		local anchor = anchorOf(face)
+		local target = if wide then PhoneConfig.CallPose(anchor) else PhoneConfig.Pose(anchor)
 		pose = (pose or part.CFrame):Lerp(target, 1 - math.exp(-PhoneConfig.HandsetSmoothing * delta))
 		part.CFrame = pose
 	end)

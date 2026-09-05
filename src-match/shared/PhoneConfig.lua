@@ -3,6 +3,26 @@
 -- cancelamento ao sair do lugar são do cliente.
 local PhoneConfig = {}
 
+-- CALIBRAGEM DA CHAMADA. Offset do fone é no espaço da CÂMERA: X+ à direita da tela, Y+ para cima,
+-- Z- para a frente. Posição da câmera é no MUNDO. Ângulo é grau, na ordem Y-X-Z do campo Orientation
+-- do Studio. Smoothing é 1/s, só o tempo de chegar lá: maior endurece até virar corte seco.
+
+-- Foco no teclado: de atender até o número encher.
+PhoneConfig.CameraPosition = Vector3.new(-2.8, 6.3, -38.7) -- onde a câmera fica
+PhoneConfig.CameraAngles = Vector3.new(-65, 90, 0) -- para onde ela olha
+PhoneConfig.HandsetOffset = Vector3.new(-1.75, 0.2, -1.3) -- o fone na tela
+PhoneConfig.HandsetAngles = Vector3.new(60, 45, 180) -- inclinação do fone
+
+-- Fora do foco: entra com as seis casas cheias, sai quando o campo recomeça vazio.
+PhoneConfig.CameraCallPosition = Vector3.new(-1.25, 7, -38.5)
+PhoneConfig.CameraCallAngles = Vector3.new(-45, 90, 0)
+PhoneConfig.HandsetCallOffset = Vector3.new(-0.95, 0.09, -1.3)
+PhoneConfig.HandsetCallAngles = Vector3.new(60, 45, 180)
+
+-- Valem nas duas vistas.
+PhoneConfig.CameraSmoothing = 12
+PhoneConfig.HandsetSmoothing = 8 -- o cabo é rope: salto aqui dá tranco na corda
+
 -- Estrutura esperada no place. O prompt mora na base, que é a peça com CanQuery ligado; o fone é a
 -- peça que sobe ao rosto, e o que estiver soldado nela vai junto.
 PhoneConfig.Path = { "Siland_Home", "interactive" }
@@ -40,36 +60,9 @@ PhoneConfig.PromptTitle = "Phone"
 -- enquadramento é fixo em cima do teclado, e de pé o jogador sai dele andando sem querer.
 PhoneConfig.SeatName = "Sec_Seat_1"
 
--- Pose do fone, no espaço da CÂMERA de quem atende — para quem assiste, no da cabeça dele. Offset em
--- studs, com X à direita, Y para cima e Z para trás: Z negativo é à frente da vista. Ângulos em
--- graus, ordem Y-X-Z igual ao campo Orientation do Studio, não a de CFrame.Angles. Preso à câmera, o
--- fone acompanha o giro horizontal e o vertical, e fica parado na tela de quem está na linha.
-PhoneConfig.HandsetOffset = Vector3.new(-1, 0.5, -1.75)
-PhoneConfig.HandsetAngles = Vector3.new(60, 45, 180)
-
--- Percurso do fone até o rosto, em 1/s. Não é enfeite: o cabo é uma corrente de RopeConstraint
--- presa nele, e ponta ancorada que salta dá tranco na corda. Na volta o salto é seguro — rope só
--- puxa ao separar, e voltar ao gancho afrouxa.
-PhoneConfig.HandsetSmoothing = 8
-
 -- Prefixo dos elos soltos do cabo. Quem está na linha simula a corda: o fone só sobe ao rosto na
 -- tela de cada cliente, e quem não simula contra o próprio fone veria o cabo ignorando o aparelho.
 PhoneConfig.LinkPrefix = "Cord_Link"
-
--- Vista de quem atende, solta no mundo: posição em studs e ângulos em graus, ordem Y-X-Z igual ao
--- campo Orientation do Studio. Nasce em cima do teclado olhando para baixo — X é o pitch, e -90 é a
--- vertical. Não segue o jogador: é enquadramento fixo, e o telefone não anda.
--- Smoothing em 1/s, só o tempo de chegar lá: maior endurece até virar corte seco.
--- Enquanto a vista é do telefone o CameraLimit sai da frente sozinho, porque ele só age em Custom.
-PhoneConfig.CameraPosition = Vector3.new(-2.8, 6.3, -38.7)
-PhoneConfig.CameraAngles = Vector3.new(-65, 90, 0)
-PhoneConfig.CameraSmoothing = 12
-
--- Vista do número cheio: as seis casas fecharam, o teclado já não serve, e a câmera recua para
--- mostrar quem está na linha. Mesma leitura da de cima, e mesmo Smoothing — o recuo é percurso, não
--- corte. O campo recomeçando vazio devolve a vista do teclado.
-PhoneConfig.CameraCallPosition = Vector3.new(-1.25, 7, -38.5)
-PhoneConfig.CameraCallAngles = Vector3.new(-45, 90, 0)
 
 -- Cancela a chamada: studs/s de caminhada que já contam como sair do lugar. Pulo cancela sempre.
 -- SeatWait são os s de graça até chegar à cadeira — dentro deles andar não cancela, senão o passo
@@ -202,11 +195,18 @@ function PhoneConfig.CallView()
 	return frame(PhoneConfig.CameraCallPosition, PhoneConfig.CameraCallAngles)
 end
 
-function PhoneConfig.Pose(anchor)
-	local angles = PhoneConfig.HandsetAngles
+local function pose(anchor, offset, angles)
 	return anchor
-		* CFrame.new(PhoneConfig.HandsetOffset)
+		* CFrame.new(offset)
 		* CFrame.fromOrientation(math.rad(angles.X), math.rad(angles.Y), math.rad(angles.Z))
+end
+
+function PhoneConfig.Pose(anchor)
+	return pose(anchor, PhoneConfig.HandsetOffset, PhoneConfig.HandsetAngles)
+end
+
+function PhoneConfig.CallPose(anchor)
+	return pose(anchor, PhoneConfig.HandsetCallOffset, PhoneConfig.HandsetCallAngles)
 end
 
 return PhoneConfig
