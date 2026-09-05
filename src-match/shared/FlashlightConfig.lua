@@ -118,5 +118,6 @@ FlashlightConfig.IconId = "rbxassetid://120425963120676"
 FlashlightConfig.HotKey = Enum.KeyCode.Two -- alterna cintura/mão; rótulo no slot acompanha
 FlashlightConfig.KeyLabel = "2"
 FlashlightConfig.PowerKey = Enum.KeyCode.Q -- liga e desliga a luz, só com a lanterna na mão
+FlashlightConfig.PowerHint = "On/Off" -- dica de tecla no canto, em inglês nativo: a engine traduz
 
 return FlashlightConfig

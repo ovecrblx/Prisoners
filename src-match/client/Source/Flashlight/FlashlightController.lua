@@ -18,7 +18,9 @@ local ItemHold = require(Items:WaitForChild("ItemHold"))
 local ItemHud = require(Items:WaitForChild("ItemHud"))
 local ItemPickup = require(Items:WaitForChild("ItemPickup"))
 local ItemView = require(Items:WaitForChild("ItemView"))
-local MobileHud = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("MobileHud"))
+local UI = script.Parent.Parent:WaitForChild("UI")
+local KeyHint = require(UI:WaitForChild("KeyHint"))
+local MobileHud = require(UI:WaitForChild("MobileHud"))
 local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local ItemConfig = require(Shared:WaitForChild("ItemConfig"))
@@ -218,8 +220,10 @@ local function setHand(value)
 		end
 	end
 	if value then
+		KeyHint.Show(FlashlightConfig.PowerHint, FlashlightConfig.PowerKey)
 		ItemHold.Claim(ITEM_ID)
 	else
+		KeyHint.Hide()
 		ItemHold.Release(ITEM_ID)
 	end
 	actionRemote:FireServer(ITEM_ID, "inHand", value)
@@ -252,6 +256,7 @@ local function drop()
 	lit = false
 	local character = player.Character
 	ItemHold.Release(ITEM_ID)
+	KeyHint.Hide()
 	if slot then
 		slot:Hide()
 	end
@@ -351,6 +356,7 @@ function FlashlightController.Start()
 		inHand = false
 		lit = false
 		ItemHold.Release(ITEM_ID)
+		KeyHint.Hide()
 		if touchPanel then
 			touchPanel:SetOn(false)
 			touchPanel:Hide()
