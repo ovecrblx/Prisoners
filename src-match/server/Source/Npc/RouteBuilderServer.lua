@@ -849,6 +849,15 @@ function RouteBuilderServer.Init()
 	end
 
 	-- Autor que cai da conexão nunca manda SetOpen(false), e a retenção seguraria os NPCs pra sempre; as tabelas por Player saem junto pra não reter a instância.
+	-- Shutdown espera este retorno: sem ele as edições dos últimos BUILDER_AUTOSAVE_INTERVAL s morrem
+	-- com o servidor. Espera a gravação em curso, se houver, e faz a que ficou suja.
+	game:BindToClose(function()
+		while autosaveBusy do
+			task.wait(0.1)
+		end
+		autosaveNow()
+	end)
+
 	Players.PlayerRemoving:Connect(function(player: Player)
 		opWindow[player] = nil
 		lastSaveAt[player] = nil
