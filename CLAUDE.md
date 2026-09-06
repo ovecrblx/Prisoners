@@ -38,13 +38,23 @@ ou do que foi trocado. Isso vive na mensagem de commit e no README.
 Escrever assim de primeira, não escrever denso e enxugar depois. Alvo: comentário perto de 3% das
 linhas, não 25%.
 
-### Antes de dar por pronto
+### O laço obrigatório de toda mudança
 
-```bash
-selene .                              # 0 errors obrigatório
-rojo build lobby.project.json -o /tmp/l.rbxl
-rojo build match.project.json -o /tmp/m.rbxl
-```
+1. **Implementa.**
+2. **Teste de regressão, se a correção nasceu de Play.** Não é opcional e não é "depois".
+3. **Bateria verde**, no place que você tocou. Roda no datamodel **Edit**, sem precisar de Play:
+   ```lua
+   local T = game.ServerScriptService.Tests:Clone(); T.Parent = game.ServerScriptService
+   print(require(T).RunAll().summary); T:Destroy()
+   ```
+4. **`selene .`** — linha de base **0 erros / 0 avisos**, nos dois places. Aviso novo é regressão.
+5. **Os dois builds**, sempre os dois: um place quebra pelo que o outro mudou, e o lint não vê.
+   ```bash
+   rojo build lobby.project.json -o /tmp/l.rbxl
+   rojo build match.project.json -o /tmp/m.rbxl
+   ```
+6. **Contraponto** (API corrente + orientação de performance), como manda a seção acima.
+7. **Commit só quando pedido.**
 
 ## Arquitetura
 
@@ -115,3 +125,79 @@ conectado, **inspecionar a hierarquia real** em vez de assumir nome ou caminho.
 - Branch principal: `main`
 - Commits em Conventional Commits, assunto em inglês; corpo em português explica o **porquê**
 - Toolchain pinada em versão exata no `aftman.toml` — o job `pin-check` do CI reprova faixa
+
+## Testes de regressão
+
+Duas baterias, uma por place, irmãs de `Source/` e não filhas — o `LoadModules(Source)` do boot não
+as varre, então elas ficam inertes no servidor de produção até alguém pedir `RunAll`.
+
+```
+src-match/server/Tests/     # ServerScriptService.Tests
+src-lobby/server/Tests/     # ServerScriptService.Tests
+```
+
+### Como se escreve um teste de regressão aqui
+
+Ele codifica a **FALHA**, não a funcionalidade — com os números MEDIDOS dentro.
+
+```lua
+t:test("gaveta cuja caixa não se chama Root ainda acha o trilho", function()
+    -- MEDIDO NO PLACE: em Storage_1 as quatro peças se chamam MeshPart; só em Storage_2/3/4 a
+    -- caixa se chama Root. Procurar por nome deixaria as seis gavetas de Storage_1 sem prompt e
+    -- sem curso — e o erro é mudo, porque os outros três armários continuam funcionando.
+    local model = fakeDrawer({ box = Vector3.new(1.426, 0.981, 3.063), faceAt = 1.549 })
+    local rig = StorageConfig.Rig(model)
+    t:assertEqual(rig.depth, 3.063, "o trilho é o eixo mais longo da caixa")
+    t:assertNear(rig.out.Z, 1, 1e-6, "e aponta para a frente, onde estão frente e puxador")
+end)
+```
+
+Três exigências: **nome descreve o defeito**, **comentário conta o que aconteceu sem a correção**,
+**números vêm da medição real**. Assim o teste vermelho, daqui a seis meses, conta a história
+inteira para quem não estava lá — inclusive para mim, sem memória desta sessão.
+
+Ferramentas do `Context`: `assert`, `assertEqual`, `assertNear`, `fail`, `stub`, `stubAll`,
+`freshRequire`, `test`, `knownFailure`.
+
+`t:freshRequire` e não `require` cru: o Studio cacheia por instância de ModuleScript pela sessão de
+Edit inteira, e a bateria ficaria verde sobre código que não é o do disco.
+
+`t:knownFailure` para bug conhecido e ainda **não** corrigido: documenta o problema em código
+executável em vez de num comentário que ninguém lê. Se um dia passar, o runner grita pedindo que
+vire `t:test` — senão ele deixa de proteger contra a regressão.
+
+### Escrever o teste NÃO depende de o usuário pedir
+
+`/regressao` é reforço, não mecanismo. O passo 2 do laço é **obrigatório por padrão**: correção
+nascida de Play sai com teste no mesmo turno, pedido ou não. Conserto entregue sem teste e sem dizer
+por quê é regressão silenciosa aberta — o defeito volta e a bateria continua verde, porque nada o
+observa.
+
+Quando não der para testar (precisa de mundo vivo, de física, de rede), **diga isso em voz alta** no
+relatório e registre o invariante abaixo. Buraco declarado é dívida; buraco silencioso é armadilha.
+
+`/varredura` é o backstop periódico: audita os invariantes direto no código e lista quais **não têm
+teste guardando**. Rode antes de publicar e depois de refactor grande.
+
+### O limite honesto
+
+Teste de unidade não olha o vão entre dois módulos internamente corretos. Contra isso valem teste de
+contrato — dois donos da mesma pergunta têm que responder igual — e observação em Play. E o ponto
+cego mais caro é ferramenta de diagnóstico sem teste.
+
+## Invariantes
+
+Decisão que atravessa arquivos mora aqui, com **dono único**: comentário no arquivo certo não alcança
+quem escreve o arquivo novo. Cada linha é alvo da `/varredura`, e a coluna do teste diz se ela tem
+guarda executável ou só disciplina.
+
+| invariante | dono | teste |
+|---|---|---|
+| `src-lobby` e `src-match` não se importam | os dois `*.project.json` | — |
+| `STORE_NAME` idêntico nos dois places | `PlayerData.lua` de cada lado | — |
+| `TeleportConfig.MapName` idêntico nos dois places | `TeleportConfig.lua` de cada lado | — |
+| sem userdata em `profile.Data` | `PlayerData.lua` | — |
+| número que entra no perfil passa por `isSafeNumber` | `PlayerData.lua` | — |
+| `TeleportData` chega `Trusted = false` e é checado antes de conceder | `MatchBootstrap.lua` | — |
+| prompt do cenário é `Style = Custom`; quem desenha é o cliente | `PromptDisplay.lua` | — |
+| `Packages/` fica fora de `Source/` | os dois `Main.server.lua` | — |

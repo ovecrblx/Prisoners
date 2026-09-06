@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__Roblox_Studio__multi_edit",
+      "Bash(rojo syncback:*)",
+      "PowerShell(rojo syncback:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -qiE 'rojo(\\.exe)?[[:space:]]+syncback' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOQUEADO: rojo syncback faz o Studio sobrescrever o DISCO. O disco e a fonte (Rojo e one-way disco->Studio) e, com a place errada ativa, o syncback destroi o source da outra place. Toda edicao de codigo nasce em src-lobby/ ou src-match/. Se voce realmente quer isso, rode no seu terminal, fora do Claude.\"}}' || true",
+            "statusMessage": "Checando rojo syncback"
+          }
+        ]
+      }
+    ]
+  }
+}
