@@ -11,15 +11,16 @@ local UserInputService = game:GetService("UserInputService")
 
 local MobileHud = require(script.Parent:WaitForChild("MobileHud"))
 
--- Caminho no place: PlayerGui.MainGui.Frame_Info.Frame.{Text, Input}. Input guarda as plaquinhas,
--- uma por tecla, cada uma chamada Key, com o glifo em Frame.Key e a chapa em Frame.RoundFrame. A
--- primeira vem autorada e nunca morre; as outras são clones dela.
+-- Caminho no place: PlayerGui.MainGui.Frame_Info.Frame.Input. Input guarda as plaquinhas, uma por
+-- tecla, cada uma chamada Key. Dentro da plaquinha: `Text` é o rótulo DAQUELA tecla, `Frame.Key` o
+-- glifo e `Frame.RoundFrame` a chapa. A primeira vem autorada e nunca morre; as outras são clones
+-- dela, então o rótulo, o glifo e a chapa vêm juntos no clone.
 local GUI_NAME = "MainGui"
 local FRAME_NAME = "Frame_Info"
 local ROW_NAME = "Frame"
-local TEXT_NAME = "Text"
 local SLOT_NAME = "Input"
 local CHIP_NAME = "Key"
+local LABEL_NAME = "Text"
 local GLYPH_PATH = { "Frame", "Key" }
 local PLATE_PATH = { "Frame", "RoundFrame" }
 
@@ -35,7 +36,6 @@ local player = Players.LocalPlayer
 
 local panel
 local holder
-local title
 local template
 local restColor
 local slots = {}
@@ -60,6 +60,11 @@ local function plateOf(slot)
 	return if node and node:IsA("GuiObject") then node else nil
 end
 
+local function labelOf(slot)
+	local node = slot:FindFirstChild(LABEL_NAME)
+	return if node and node:IsA("TextLabel") then node else nil
+end
+
 -- LayoutOrder acompanha a ordem da chamada porque o UIListLayout do Input ordena por ela.
 local function resize(count)
 	for index = #slots + 1, count do
@@ -75,20 +80,23 @@ local function resize(count)
 end
 
 -- Enquanto o item estiver na mão a dica pode voltar, então o prazo é reiniciado a cada chamada.
--- `keys` é um KeyCode ou uma lista deles, na ordem em que aparecem na linha.
-function KeyHint.Show(text, keys)
+-- `entries` é uma lista de { key = KeyCode, text = string }, na ordem em que aparecem, ou uma só
+-- dessas tabelas quando a ação tem uma tecla apenas.
+function KeyHint.Show(entries)
 	if not (panel and UserInputService.KeyboardEnabled) or MobileHud.IsMobile() then
 		return
 	end
 
-	-- Sai do KeyCode, não de um rótulo à mão: o teclado do jogador decide que letra é aquela tecla,
-	-- e a página do GetStringForKeyCode não descreve o retorno. Medido: `Q` devolve "Q" e as teclas
-	-- sem letra, como `LeftControl`, devolvem "" — essas não têm o que desenhar aqui.
+	local list = if entries.key then { entries } else entries
+
+	-- O glifo sai do KeyCode, não de um rótulo à mão: o teclado do jogador decide que letra é aquela
+	-- tecla, e a página do GetStringForKeyCode não descreve o retorno. Medido: `Q` devolve "Q" e as
+	-- teclas sem letra, como `LeftControl`, devolvem "" — essas não têm o que desenhar aqui.
 	local faces = {}
-	for _, keyCode in ipairs(if type(keys) == "table" then keys else { keys }) do
-		local face = UserInputService:GetStringForKeyCode(keyCode)
+	for _, entry in ipairs(list) do
+		local face = UserInputService:GetStringForKeyCode(entry.key)
 		if face == "" then
-			warn("[KeyHint] tecla sem rótulo: " .. tostring(keyCode))
+			warn("[KeyHint] tecla sem rótulo: " .. tostring(entry.key))
 			return
 		end
 		table.insert(faces, face)
@@ -99,13 +107,17 @@ function KeyHint.Show(text, keys)
 
 	resize(#faces)
 	for index, face in ipairs(faces) do
-		local mark = glyphOf(slots[index])
+		local slot = slots[index]
+		local mark = glyphOf(slot)
 		if mark then
 			mark.Text = face
 		end
+		local label = labelOf(slot)
+		if label then
+			label.Text = list[index].text or ""
+		end
 		KeyHint.SetOn(false, index)
 	end
-	title.Text = text
 	panel.Visible = true
 
 	token += 1
@@ -162,12 +174,23 @@ function KeyHint.Start()
 	local gui = playerGui and playerGui:WaitForChild(GUI_NAME, WAIT_TIMEOUT)
 	local frame = gui and gui:WaitForChild(FRAME_NAME, WAIT_TIMEOUT)
 	local found = frame and frame:WaitForChild(ROW_NAME, WAIT_TIMEOUT)
-	local label = found and found:FindFirstChild(TEXT_NAME)
 	local box = found and found:FindFirstChild(SLOT_NAME)
 	local first = box and box:FindFirstChild(CHIP_NAME)
 
-	if not (label and label:IsA("TextLabel") and first and glyphOf(first)) then
-		warn("[KeyHint] " .. GUI_NAME .. "." .. FRAME_NAME .. "." .. ROW_NAME .. " incompleto; sem dica de tecla.")
+	if not (first and glyphOf(first) and labelOf(first)) then
+		warn(
+			"[KeyHint] "
+				.. GUI_NAME
+				.. "."
+				.. FRAME_NAME
+				.. "."
+				.. ROW_NAME
+				.. "."
+				.. SLOT_NAME
+				.. "."
+				.. CHIP_NAME
+				.. " incompleto; sem dica de tecla."
+		)
 		return
 	end
 
@@ -182,7 +205,6 @@ function KeyHint.Start()
 
 	panel = frame
 	holder = box
-	title = label
 	panel.Visible = false
 
 	-- O aparelho muda em partida: teclado pareado num tablet, e o botão do emulador no Studio. Virou

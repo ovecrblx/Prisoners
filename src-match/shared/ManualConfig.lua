@@ -96,6 +96,7 @@ ManualConfig.KeyLabel = "1"
 -- passo, e a dica de tecla mostra as duas juntas, na ordem em que estão aqui.
 ManualConfig.FlipPrevKey = Enum.KeyCode.Q
 ManualConfig.FlipNextKey = Enum.KeyCode.E
-ManualConfig.FlipHint = "Flip Page"
+ManualConfig.FlipPrevHint = "Prev"
+ManualConfig.FlipNextHint = "Next"
 
 return ManualConfig

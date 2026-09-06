@@ -233,7 +233,7 @@ local function setHand(value)
 	end
 	if value then
 		if not hintRetired then
-			KeyHint.Show(FlashlightConfig.PowerHint, FlashlightConfig.PowerKey)
+			KeyHint.Show({ key = FlashlightConfig.PowerKey, text = FlashlightConfig.PowerHint })
 			KeyHint.SetOn(lit)
 		end
 		ItemHold.Claim(ITEM_ID)

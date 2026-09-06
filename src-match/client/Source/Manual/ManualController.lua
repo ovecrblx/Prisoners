@@ -400,7 +400,10 @@ local function enterUse()
 	ItemHold.Claim(ITEM_ID)
 
 	maskHud(true)
-	KeyHint.Show(ManualConfig.FlipHint, { ManualConfig.FlipPrevKey, ManualConfig.FlipNextKey })
+	KeyHint.Show({
+		{ key = ManualConfig.FlipPrevKey, text = ManualConfig.FlipPrevHint },
+		{ key = ManualConfig.FlipNextKey, text = ManualConfig.FlipNextHint },
+	})
 	ItemHud.SetVisible(false)
 	hideHeads()
 	hideAccessories()
