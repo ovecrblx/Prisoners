@@ -93,7 +93,7 @@ function StorageConfig.Rig(model)
 		axis, out = -axis, -out
 	end
 
-	return { box = box, axis = axis, out = out, depth = depth }
+	return { box = box, axis = axis, out = out, depth = depth, height = size.Y }
 end
 
 return StorageConfig

@@ -35,6 +35,7 @@ local Tests = {}
 -- o nome dela entra nesta lista — spec fora dela não roda, e o runner não tem como saber que existe.
 local SPEC_NAMES = {
 	"StorageRigSpec",
+	"CaseFitSpec",
 }
 
 local function serialize(value)
