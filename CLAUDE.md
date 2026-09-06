@@ -206,3 +206,6 @@ guarda executável ou só disciplina.
 | sair da gaveta é gatilho do cliente, mas quem fecha é o servidor | `StorageService.lua` | — |
 | a câmera da gaveta fica do lado da boca e acima da borda | `CaseConfig.lua` | `CaseFitSpec` |
 | dica de tecla de cena que dura usa `KeyHint.Pin`, não `Show` | `KeyHint.lua` | — |
+| o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
+| as folhas do elevador correm para o lado da folha `ElevatorPocket`, e cada uma tem o seu curso | `DoorConfig.lua` | `ElevatorSlideSpec` |
+| o prompt do elevador mora no botão `Call`, com a âncora virada para o corredor | `ElevatorService.lua` | `ElevatorSlideSpec` |

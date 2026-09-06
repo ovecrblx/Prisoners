@@ -36,6 +36,7 @@ local Tests = {}
 local SPEC_NAMES = {
 	"StorageRigSpec",
 	"CaseFitSpec",
+	"ElevatorSlideSpec",
 }
 
 local function serialize(value)

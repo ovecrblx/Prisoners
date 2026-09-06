@@ -171,8 +171,8 @@ local function scan(door)
 end
 
 local function register(model)
-	-- Cortina usa a mesma convenção de nome, mas estica em vez de girar: é do CurtainService.
-	if model.Name:sub(1, #DoorConfig.CurtainPrefix) == DoorConfig.CurtainPrefix then
+	-- Cortina e elevador usam a mesma convenção de nome, mas não giram: cada um tem o seu módulo.
+	if DoorConfig.Kind(model) ~= "door" then
 		return
 	end
 

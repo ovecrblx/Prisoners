@@ -263,7 +263,7 @@ function CurtainController.Start()
 	end
 
 	local function consider(child)
-		if child:IsA("Model") and child.Name:sub(1, #DoorConfig.CurtainPrefix) == DoorConfig.CurtainPrefix then
+		if child:IsA("Model") and DoorConfig.Kind(child) == "curtain" then
 			register(child)
 		end
 	end

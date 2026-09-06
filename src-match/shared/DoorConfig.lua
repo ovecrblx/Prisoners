@@ -83,6 +83,22 @@ DoorConfig.CurtainStagger = 0.09
 DoorConfig.CloseHeight = 3.85
 DoorConfig.OpenHeight = 1
 
+-- Elevador: as folhas não giram, correm de lado e param uma atrás da outra no mesmo bolso. Quem
+-- nomeia o bolso é `Pocket` — as folhas se chamam pelo lado de quem olha do corredor, e a geometria
+-- sozinha não sabe qual lado é a esquerda. `Travel` é a fração do curso pleno, o que tiraria a folha
+-- inteira do vão, e é o que deixa a nesga de fora. O prompt fica no botão de chamada e não na folha.
+DoorConfig.ElevatorPrefix = "Door_Elevator"
+DoorConfig.ElevatorPocket = "Left Root"
+DoorConfig.ElevatorCall = "Call"
+DoorConfig.ElevatorAttribute = "Open"
+DoorConfig.ElevatorTravel = 0.9
+DoorConfig.ElevatorOpenTime = 1.1
+DoorConfig.ElevatorCloseTime = 1.1
+DoorConfig.ElevatorStyle = Enum.EasingStyle.Quint
+DoorConfig.ElevatorDirection = Enum.EasingDirection.InOut
+DoorConfig.ElevatorAutoClose = 0
+DoorConfig.ElevatorTitle = "Elevator"
+
 -- Style Custom: a engine não desenha nada, nem o fundo escuro atrás da tecla. Quem desenha é
 -- o PromptDisplay do cliente. Clicável só no toque: no PC o alvo de clique cobre o prompt
 -- inteiro e engole o arrasto do mouse, travando a câmera de quem mira nele.
@@ -190,6 +206,92 @@ end
 
 function DoorConfig.SideOf(hinges, normal, position)
 	return (position - hinges[1].Position):Dot(normal) >= 0 and 1 or -1
+end
+
+-- Três famílias moram na mesma pasta, e cada uma tem o seu par serviço/controlador. Quem decide é
+-- o nome, e a decisão mora aqui: espalhada pelos quatro módulos, um deles esquece a família nova e
+-- o Model entra na lógica errada em silêncio — a porta do elevador girando como folha de dobradiça.
+function DoorConfig.Kind(model)
+	local name = model.Name
+
+	if name:sub(1, #DoorConfig.CurtainPrefix) == DoorConfig.CurtainPrefix then
+		return "curtain"
+	elseif name:sub(1, #DoorConfig.ElevatorPrefix) == DoorConfig.ElevatorPrefix then
+		return "elevator"
+	end
+
+	return "door"
+end
+
+-- Eixo horizontal em que a folha corre: perpendicular à normal da face e ao pé-direito. Sai do
+-- mundo, então a porta virada em qualquer ângulo continua correndo de lado. Folha deitada não tem
+-- esse eixo, e aí não há por onde correr.
+function DoorConfig.SlideAxis(leaf)
+	local side = Vector3.new(0, 1, 0):Cross(leaf.CFrame:VectorToWorldSpace(DoorConfig.FaceAxis(leaf)))
+	return if side.Magnitude > 1e-3 then side.Unit else nil
+end
+
+-- Meia-extensão da folha ao longo de um eixo do mundo.
+function DoorConfig.HalfSpan(leaf, axis)
+	local cf, size = leaf.CFrame, leaf.Size
+	return (
+		math.abs(axis:Dot(cf.RightVector)) * size.X
+		+ math.abs(axis:Dot(cf.UpVector)) * size.Y
+		+ math.abs(axis:Dot(cf.LookVector)) * size.Z
+	) / 2
+end
+
+-- Folhas do elevador com o curso de cada uma, da mais curta para a mais longa — a do bolso primeiro.
+-- O curso pleno é o que leva a borda de trás da folha até a borda do vão do lado do bolso, então
+-- cada folha anda o quanto precisa e elas param empilhadas em vez de uma empurrar a outra.
+-- `axis` já aponta PARA o bolso: o sinal vem de onde a folha nomeada está, não de eixo escrito à mão.
+function DoorConfig.SlideRig(model)
+	local hinges = DoorConfig.Hinges(model)
+	local pocket = model:FindFirstChild(DoorConfig.ElevatorPocket)
+	local axis = pocket and pocket:IsA("BasePart") and DoorConfig.SlideAxis(pocket) or nil
+
+	if #hinges < 2 or not axis or not table.find(hinges, pocket) then
+		return nil
+	end
+
+	local sum = 0
+	for _, leaf in ipairs(hinges) do
+		if leaf ~= pocket then
+			sum += axis:Dot(leaf.Position)
+		end
+	end
+
+	if axis:Dot(pocket.Position) < sum / (#hinges - 1) then
+		axis = -axis
+	end
+
+	local edge
+	for _, leaf in ipairs(hinges) do
+		local reach = axis:Dot(leaf.Position) + DoorConfig.HalfSpan(leaf, axis)
+		edge = if edge then math.max(edge, reach) else reach
+	end
+
+	local leaves = {}
+	for _, leaf in ipairs(hinges) do
+		local back = axis:Dot(leaf.Position) - DoorConfig.HalfSpan(leaf, axis)
+		leaves[#leaves + 1] = { part = leaf, travel = (edge - back) * DoorConfig.ElevatorTravel }
+	end
+
+	table.sort(leaves, function(a, b)
+		return a.travel < b.travel
+	end)
+
+	return { axis = axis, leaves = leaves }
+end
+
+-- Âncora do prompt no botão de chamada, no LOCAL dele: à frente da face que olha para longe das
+-- folhas. O miolo do botão fica rente à parede, e a engine só mostra o prompt com caminho livre da
+-- câmera até ele.
+function DoorConfig.CallAnchor(call, center)
+	local face = DoorConfig.FaceAxis(call)
+	local away = call.CFrame:VectorToWorldSpace(face):Dot(call.Position - center) >= 0
+	local reach = math.abs(face:Dot(call.Size)) / 2 + DoorConfig.PromptDepth
+	return face * (if away then reach else -reach)
 end
 
 return DoorConfig

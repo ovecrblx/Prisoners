@@ -71,7 +71,7 @@ function CurtainService.Start()
 	end
 
 	for _, model in ipairs(folder:GetChildren()) do
-		if model:IsA("Model") and model.Name:sub(1, #DoorConfig.CurtainPrefix) == DoorConfig.CurtainPrefix then
+		if model:IsA("Model") and DoorConfig.Kind(model) == "curtain" then
 			register(model)
 		end
 	end

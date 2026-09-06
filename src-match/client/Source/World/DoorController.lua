@@ -208,8 +208,8 @@ local function targetOf(model)
 end
 
 local function register(model)
-	-- Cortina usa a mesma convenção de nome, mas estica em vez de girar: é do CurtainController.
-	if doors[model] or model.Name:sub(1, #DoorConfig.CurtainPrefix) == DoorConfig.CurtainPrefix then
+	-- Cortina e elevador usam a mesma convenção de nome, mas não giram: cada um tem o seu módulo.
+	if doors[model] or DoorConfig.Kind(model) ~= "door" then
 		return
 	end
 
