@@ -10,22 +10,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CaseConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CaseConfig"))
 local StorageConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("StorageConfig"))
 
+-- O que o molde não tiver vira aviso: pasta com o nome autorado passa por caso de verdade na tela.
 local function dress(clone, case, slot)
-	local photo = CaseConfig.Node(clone, CaseConfig.PhotoPath)
-	if photo and photo:IsA("ImageLabel") then
-		photo.Image = case.photo
-	else
-		warn("[CaseFolderService] retrato não encontrado no molde; pasta sai sem foto.")
+	local missing = CaseConfig.Dress(clone, case)
+	if #missing > 0 then
+		warn("[CaseFolderService] molde incompleto, faltou: " .. table.concat(missing, ", "))
 	end
-
-	local label = CaseConfig.Node(clone, CaseConfig.NamePath)
-	if label and label:IsA("TextLabel") then
-		label.Text = case.name
-	else
-		warn("[CaseFolderService] rótulo não encontrado no molde; pasta sai sem nome.")
-	end
-
-	clone:SetAttribute(CaseConfig.IdAttribute, case.id)
 	clone:SetAttribute(CaseConfig.SlotAttribute, slot)
 end
 

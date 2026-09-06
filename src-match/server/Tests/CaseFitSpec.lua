@@ -121,4 +121,27 @@ return function(t)
 		t:assert(CaseConfig.PrevKey ~= CaseConfig.TakeKey, "retroceder e pegar na mesma tecla")
 		t:assert(CaseConfig.NextKey ~= CaseConfig.TakeKey, "avançar e pegar na mesma tecla")
 	end)
+
+	t:test("o nome do caso chega na aba, e o carimbo da capa fica intocado", function()
+		-- MEDIDO: o rótulo da aba é TextButton, e TextButton NÃO é TextLabel — as duas carregam
+		-- `Text` mas são irmãs, não uma descendente da outra. A primeira versão exigia TextLabel,
+		-- então nada era escrito e a pasta nascia com o texto autorado, sem erro nenhum.
+		-- A aba é o alvo porque com a pasta EM PÉ é ela que a câmera enquadra de cima. O Frame_Tag
+		-- da capa é o carimbo TOP SECRET e é decoração: escrever nele apaga a arte.
+		local clone = template:Clone()
+		local missing = CaseConfig.Dress(clone, { id = "x", name = "ALVO", photo = "rbxassetid://1" })
+		local label = CaseConfig.Node(clone, CaseConfig.NamePath)
+		local photo = CaseConfig.Node(clone, CaseConfig.PhotoPath)
+		local tag = CaseConfig.Node(clone, CaseConfig.TagPath)
+		local stamp = tag and tag:FindFirstChildWhichIsA("TextButton")
+		local labelText = label and label.Text
+		local image = photo and photo.Image
+		local stampText = stamp and stamp.Text
+		clone:Destroy()
+
+		t:assert(#missing == 0, "o molde não entregou: " .. table.concat(missing, ", "))
+		t:assertEqual(labelText, "ALVO", "nome na aba de topo")
+		t:assertEqual(image, "rbxassetid://1", "retrato")
+		t:assertEqual(stampText, "TOP SECRET", "o carimbo da capa não pode ser tocado")
+	end)
 end

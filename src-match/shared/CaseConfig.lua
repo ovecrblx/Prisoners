@@ -9,15 +9,20 @@ CaseConfig.TemplateWait = 20
 -- Caminhos dentro do clone, a partir do Model. `Page` está reservada para a descrição do caso e
 -- ainda não tem leitor: o campo existe na lista, ninguém o escreve.
 CaseConfig.PhotoPath = { "Root", "SurfaceGui", "Frame", "Frame_Image", "Photo" }
-CaseConfig.NamePath = { "Root", "SurfaceGui", "Frame", "Frame_Text", "Name" }
+-- O nome do caso mora na ABA de topo, na peça Part, que fica 0,5 acima do centro da capa. Com a
+-- pasta em pé é ela que a câmera enquadra de cima.
+-- Na capa NÃO se mexe: Root.SurfaceGui.Frame.Frame_Tag é o carimbo TOP SECRET, e é decoração.
+CaseConfig.NamePath = { "Part", "SurfaceGui", "Frame_Text", "Name" }
+CaseConfig.TagPath = { "Root", "SurfaceGui", "Frame", "Frame_Tag" }
 CaseConfig.CoverName = "Root"
 
 -- Um caso por linha. `photo` vai direto para o Image do retrato, e vazio deixa o quadro em branco,
 -- que é como o molde vem publicado. `page` é a descrição, reservada.
+-- Só o Farmer tem retrato próprio; os outros dois repetem o dele à espera dos ids de verdade.
 CaseConfig.Cases = {
-	{ id = "farmer", name = "Farmer", photo = "rbxassetid://115303891332369", page = "" },
-	{ id = "case_2", name = "Case 02", photo = "rbxassetid://115303891332369", page = "" },
-	{ id = "case_3", name = "Case 03", photo = "rbxassetid://115303891332369", page = "" },
+	{ id = "farmer", name = "Farmer", photo = "rbxassetid://111541704155412", page = "" },
+	{ id = "case_2", name = "Case 02", photo = "rbxassetid://111541704155412", page = "" },
+	{ id = "case_3", name = "Case 03", photo = "rbxassetid://111541704155412", page = "" },
 }
 
 -- Pastas da fila, todas na MESMA gaveta sorteada: é o que dá o que percorrer com as teclas. Acima do
@@ -70,12 +75,42 @@ CaseConfig.PrevHint = "Prev"
 CaseConfig.TakeHint = "Take"
 CaseConfig.NextHint = "Next"
 
+
 function CaseConfig.Node(root, path)
 	local node = root
 	for _, name in ipairs(path) do
 		node = node and node:FindFirstChild(name)
 	end
 	return node
+end
+
+-- Os dois rótulos do molde são TextButton, não TextLabel: as duas classes carregam `Text` mas não
+-- descendem uma da outra, e exigir só TextLabel faz a pasta nascer com o texto autorado.
+local function textOf(node)
+	return if node and (node:IsA("TextLabel") or node:IsA("TextButton")) then node else nil
+end
+
+-- Escreve o caso no clone: retrato, rótulo da capa e aba de topo. Devolve o que NÃO encontrou, para
+-- o chamador avisar em vez de deixar nascer pasta com o nome do molde.
+function CaseConfig.Dress(model, case)
+	local missing = {}
+
+	local photo = CaseConfig.Node(model, CaseConfig.PhotoPath)
+	if photo and photo:IsA("ImageLabel") then
+		photo.Image = case.photo
+	else
+		table.insert(missing, table.concat(CaseConfig.PhotoPath, "."))
+	end
+
+	local label = textOf(CaseConfig.Node(model, CaseConfig.NamePath))
+	if label then
+		label.Text = case.name
+	else
+		table.insert(missing, table.concat(CaseConfig.NamePath, "."))
+	end
+
+	model:SetAttribute(CaseConfig.IdAttribute, case.id)
+	return missing
 end
 
 function CaseConfig.Rotation()
