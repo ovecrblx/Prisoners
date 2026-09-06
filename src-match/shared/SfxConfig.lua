@@ -64,6 +64,11 @@ local SfxConfig = {
 	DrawerOpen = { Id = 9116570823, Volume = 0.35, Speed = 1.36, Range = 25, Region = NumberRange.new(0.4, 2.4) },
 	DrawerClose = { Id = 9116581685, Volume = 0.7, Speed = 1.66, Range = 25, Region = NumberRange.new(0.5, 2.2) },
 
+	-- Pasta de caso selecionada na fila da gaveta, presa na capa dela. Alcance curto: é papel roçando,
+	-- não evento de sala. Sem `Region`: o silêncio de cabeça não foi medido, porque em Edit mode a
+	-- engine não roda o relógio do áudio.
+	CaseSelect = { Id = 9116463237, Volume = 0.5, Range = 20 },
+
 	-- Ambiente da hélice, em laço preso nela: quem chega perto ouve, e o "perto" é a atenuação do
 	-- próprio Sound. Loja: create.roblox.com/store/asset/124398148205753
 	FanLoop = { Id = 124398148205753, Volume = 0.105, Range = 40, Looped = true },

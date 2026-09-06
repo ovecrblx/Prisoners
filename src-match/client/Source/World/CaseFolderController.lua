@@ -22,6 +22,7 @@ local StorageConfig = require(Shared:WaitForChild("StorageConfig"))
 
 local UI = script.Parent.Parent:WaitForChild("UI")
 local KeyHint = require(UI:WaitForChild("KeyHint"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 local HINT_PREV = 1
 local HINT_TAKE = 2
@@ -143,6 +144,7 @@ local function focus(index)
 	local case = active.cases[selected]
 	play(active, case, true)
 	adorn(case.model)
+	Sfx.Play("CaseSelect", coverOf(case.model))
 end
 
 local function casesIn(model)
