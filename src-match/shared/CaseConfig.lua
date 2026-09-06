@@ -75,6 +75,19 @@ CaseConfig.PrevHint = "Prev"
 CaseConfig.TakeHint = "Take"
 CaseConfig.NextHint = "Next"
 
+-- Vista de quem assumiu a gaveta, no espaço LOCAL da caixa: vale igual nas quatro e acompanha a
+-- gaveta enquanto ela corre. O telefone usa coordenada do mundo porque é um aparelho só na sala.
+-- Medido: olho a 1,6 acima e 1,6 à frente, mirando 0,25 acima do centro, dá -40 graus de mergulho a
+-- 2,09 studs da fila, com caminho livre nas quatro gavetas.
+CaseConfig.CameraOffset = Vector3.new(0, 1.6, -1.6)
+CaseConfig.CameraTarget = Vector3.new(0, 0.25, 0)
+CaseConfig.CameraSmoothing = 12
+
+-- Andar larga a gaveta, como largar o telefone. `SettleWait` são os s de graça logo depois de
+-- assumir: quem acabou de chegar ainda carrega velocidade do último passo, e sem a janela a gaveta
+-- se fecharia no quadro seguinte ao prompt.
+CaseConfig.CancelSpeed = 0.1
+CaseConfig.SettleWait = 0.35
 
 function CaseConfig.Node(root, path)
 	local node = root
@@ -148,6 +161,15 @@ function CaseConfig.BaseHeight(rig, metrics)
 	local reach = CaseConfig.Extent(rotation, metrics.size)
 	local above = rotation:VectorToWorldSpace(metrics.delta).Y
 	return -rig.height / 2 + CaseConfig.Clearance + reach.Y - above
+end
+
+-- Vista da gaveta no MUNDO, tirada da caixa: olho e alvo saem do local dela, então o enquadramento
+-- vira junto com o armário e acompanha a gaveta enquanto ela corre.
+function CaseConfig.View(box)
+	return CFrame.lookAt(
+		box.CFrame:PointToWorldSpace(CaseConfig.CameraOffset),
+		box.CFrame:PointToWorldSpace(CaseConfig.CameraTarget)
+	)
 end
 
 -- Pose da pasta `index` de uma fila de `count`, no espaço local da caixa. A fila fica centrada no

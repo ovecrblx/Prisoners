@@ -2,8 +2,9 @@
 -- aparelho de toque, e só com teclado: no toque quem manda é a MobileGui, e lá o botão já é a
 -- própria ação. Quem decide de quem é a vez é MobileHud.IsMobile, para as duas GUIs nunca
 -- aparecerem juntas nem sumirem juntas.
--- É lembrete, não HUD: entra quando o item chega à mão e sai sozinha depois de HINT_TIME, com o
--- item ainda lá. Guardar o item também a tira, antes do prazo.
+-- Duas vidas, e quem chama escolhe. `Show` é lembrete: entra quando o item chega à mão e sai sozinha
+-- depois de HINT_TIME, com o item ainda lá; guardar o item também a tira, antes do prazo. `Pin` é
+-- painel: fica enquanto a cena durar, e só `Hide` a tira.
 local KeyHint = {}
 
 local Players = game:GetService("Players")
@@ -79,12 +80,11 @@ local function resize(count)
 	end
 end
 
--- Enquanto o item estiver na mão a dica pode voltar, então o prazo é reiniciado a cada chamada.
--- `entries` é uma lista de { key = KeyCode, text = string }, na ordem em que aparecem, ou uma só
--- dessas tabelas quando a ação tem uma tecla apenas.
-function KeyHint.Show(entries)
+-- Desenha a linha e devolve se ela entrou. `entries` é uma lista de { key = KeyCode, text = string },
+-- na ordem em que aparecem, ou uma só dessas tabelas quando a ação tem uma tecla apenas.
+local function draw(entries)
 	if not (panel and UserInputService.KeyboardEnabled) or MobileHud.IsMobile() then
-		return
+		return false
 	end
 
 	local list = if entries.key then { entries } else entries
@@ -97,12 +97,12 @@ function KeyHint.Show(entries)
 		local face = UserInputService:GetStringForKeyCode(entry.key)
 		if face == "" then
 			warn("[KeyHint] tecla sem rótulo: " .. tostring(entry.key))
-			return
+			return false
 		end
 		table.insert(faces, face)
 	end
 	if #faces == 0 then
-		return
+		return false
 	end
 
 	resize(#faces)
@@ -118,7 +118,17 @@ function KeyHint.Show(entries)
 		end
 		KeyHint.SetOn(false, index)
 	end
+
 	panel.Visible = true
+	return true
+end
+
+-- Lembrete: entra e sai sozinha depois de HINT_TIME, com o item ainda na mão. Enquanto ele estiver
+-- lá a dica pode voltar, então o prazo é reiniciado a cada chamada.
+function KeyHint.Show(entries)
+	if not draw(entries) then
+		return
+	end
 
 	token += 1
 	local stamp = token
@@ -127,6 +137,18 @@ function KeyHint.Show(entries)
 			panel.Visible = false
 		end
 	end)
+end
+
+-- Dica que FICA. Quem chama é dono de uma cena que dura — a gaveta em uso, com a câmera presa nela —
+-- e ali as teclas são o painel de controle, não um lembrete: some quando a cena acaba, e é `Hide`
+-- quem a tira. O passo do token cancela um prazo pendente de um `Show` anterior, senão ele apagaria
+-- a linha fixada no meio da cena.
+function KeyHint.Pin(entries)
+	if not draw(entries) then
+		return
+	end
+
+	token += 1
 end
 
 -- A chapa da tecla acompanha o estado do que ela comanda: acesa em LIT_COLOR, apagada na cor que

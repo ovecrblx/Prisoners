@@ -1,9 +1,12 @@
--- Fila de pastas dentro da gaveta aberta: seleção, destaque e o levante da pasta escolhida.
--- Tudo local. O servidor semeia as pastas e publica `Slot` em cada uma; percorrer a fila não muda
--- estado de mundo, então não passa pela rede.
--- A pasta destacada sobe no eixo do MUNDO, e a conta sai sempre da pose de repouso guardada no
--- referencial da caixa da gaveta: a gaveta corre enquanto a fila está viva, e pose absoluta
--- guardada uma vez ficaria para trás no primeiro puxão.
+-- A gaveta em uso por ESTE jogador: a vista, a fila de pastas, o destaque e o levante da escolhida.
+-- Quem decide de quem é a gaveta é o servidor, e publica no atributo dela; aqui só se lê. Percorrer
+-- a fila não muda estado de mundo, então não passa pela rede — só sair passa, porque quem fecha a
+-- gaveta é o servidor.
+-- Andar larga a gaveta, como largar o telefone: o gatilho é do cliente porque só ele vê o passo no
+-- quadro em que acontece.
+-- A pasta destacada sobe no eixo do MUNDO, e a conta sai da pose de repouso guardada no referencial
+-- da caixa: a gaveta corre enquanto a fila está viva, e pose absoluta guardada uma vez ficaria para
+-- trás no primeiro puxão.
 local CaseFolderController = {}
 
 local Players = game:GetService("Players")
@@ -11,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CaseConfig = require(Shared:WaitForChild("CaseConfig"))
@@ -23,15 +27,25 @@ local HINT_PREV = 1
 local HINT_TAKE = 2
 local HINT_NEXT = 3
 
+-- Depois do módulo de câmera, pelo mesmo motivo do telefone: ele escreve a CFrame em
+-- RenderPriority.Camera, e escrever antes dele seria escrever no quadro passado.
+local RENDER_BIND = "CaseFolderView"
+local RENDER_PRIORITY = Enum.RenderPriority.Camera.Value + 2
+
 local player = Players.LocalPlayer
 
 local folder
+local leaveRemote
 local drawers = {}
 local active
 local selected = 0
 local highlight
 local lifting = {}
+local links = {}
 local stepConnection
+local render = false
+local settled = false
+local token = 0
 local step
 local takeWarned = false
 
@@ -40,7 +54,6 @@ local function coverOf(model)
 	return if part and part:IsA("BasePart") then part else nil
 end
 
--- Pose de repouso no referencial da caixa: é o que sobrevive à gaveta correndo.
 local function restOf(entry, case)
 	local at = entry.rest[case]
 	if not at then
@@ -155,15 +168,55 @@ local function casesIn(model)
 	return list
 end
 
-local function close()
-	if not active then
+-- Em Scriptable o módulo de câmera larga o volante. O enquadramento chega por percurso e não por
+-- corte, e sai da caixa da gaveta, então acompanha o trilho enquanto ela abre.
+local function aim(delta)
+	local camera = Workspace.CurrentCamera
+	if not (camera and active and active.box.Parent) then
 		return
 	end
 
-	for _, case in ipairs(active.cases) do
-		lifting[case] = nil
-		case.height = 0
-		apply(active, case)
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = camera.CFrame:Lerp(
+		CaseConfig.View(active.box),
+		1 - math.exp(-CaseConfig.CameraSmoothing * delta)
+	)
+end
+
+local function restoreCamera()
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+
+	camera.CameraType = Enum.CameraType.Custom
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		camera.CameraSubject = humanoid
+	end
+end
+
+local function stop()
+	token += 1
+
+	for _, link in ipairs(links) do
+		link:Disconnect()
+	end
+	table.clear(links)
+
+	if render then
+		render = false
+		RunService:UnbindFromRenderStep(RENDER_BIND)
+		restoreCamera()
+	end
+
+	if active then
+		for _, case in ipairs(active.cases) do
+			lifting[case] = nil
+			case.height = 0
+			apply(active, case)
+		end
 	end
 
 	if highlight then
@@ -174,9 +227,25 @@ local function close()
 	KeyHint.Hide()
 	active = nil
 	selected = 0
+	settled = false
 end
 
-local function open(entry)
+-- Pedido de saída. Quem fecha a gaveta é o servidor: solta a vista na hora para o gesto não engasgar,
+-- e o resto chega pelo atributo.
+local function leave()
+	if not active then
+		return
+	end
+
+	stop()
+	if leaveRemote then
+		leaveRemote:FireServer()
+	end
+end
+
+local function begin(entry)
+	stop()
+
 	local model = StorageConfig.Find(folder, entry.spec)
 	local rig = model and StorageConfig.Rig(model)
 	if not rig then
@@ -184,33 +253,63 @@ local function open(entry)
 	end
 
 	local cases = casesIn(model)
-	if #cases == 0 then
-		return
-	end
-
-	local cover = coverOf(cases[1].model)
-	if not cover then
-		return
-	end
+	local cover = cases[1] and coverOf(cases[1].model)
 
 	entry.box = rig.box
 	entry.cases = cases
 	entry.rest = {}
-	entry.lift = cover.Size.Y * CaseConfig.Lift
+	entry.lift = if cover then cover.Size.Y * CaseConfig.Lift else 0
 
 	active = entry
 	selected = 0
-	KeyHint.Show({
-		{ key = CaseConfig.PrevKey, text = CaseConfig.PrevHint },
-		{ key = CaseConfig.TakeKey, text = CaseConfig.TakeHint },
-		{ key = CaseConfig.NextKey, text = CaseConfig.NextHint },
-	})
-	focus(1)
+
+	render = true
+	RunService:BindToRenderStep(RENDER_BIND, RENDER_PRIORITY, aim)
+
+	-- Gaveta vazia continua sendo uso exclusivo e continua tendo vista: o que ela não tem é fila para
+	-- percorrer, então a dica de tecla também não entra.
+	if #cases > 0 then
+		KeyHint.Pin({
+			{ key = CaseConfig.PrevKey, text = CaseConfig.PrevHint },
+			{ key = CaseConfig.TakeKey, text = CaseConfig.TakeHint },
+			{ key = CaseConfig.NextKey, text = CaseConfig.NextHint },
+		})
+		focus(1)
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	-- Quem acabou de acionar o prompt ainda carrega a velocidade do último passo; sem a janela a
+	-- gaveta se fecharia no quadro seguinte ao gesto que a abriu.
+	local mark = token
+	settled = false
+	task.delay(CaseConfig.SettleWait, function()
+		if token == mark then
+			settled = true
+		end
+	end)
+
+	table.insert(links, humanoid.Running:Connect(function(speed)
+		if settled and speed > CaseConfig.CancelSpeed then
+			leave()
+		end
+	end))
+	table.insert(links, humanoid.Jumping:Connect(function(jumping)
+		if jumping then
+			leave()
+		end
+	end))
+	table.insert(links, humanoid.Died:Connect(leave))
 end
 
-local function published(entry)
+local function mine(entry)
 	local model = StorageConfig.Find(folder, entry.spec)
-	return model ~= nil and model:GetAttribute(StorageConfig.OpenAttribute) == true
+	local userId = model and model:GetAttribute(StorageConfig.UserAttribute)
+	return type(userId) == "number" and userId == player.UserId
 end
 
 local function watch(entry)
@@ -224,13 +323,17 @@ local function watch(entry)
 		entry.link:Disconnect()
 	end
 
-	entry.link = model:GetAttributeChangedSignal(StorageConfig.OpenAttribute):Connect(function()
-		if published(entry) then
-			open(entry)
+	entry.link = model:GetAttributeChangedSignal(StorageConfig.UserAttribute):Connect(function()
+		if mine(entry) then
+			begin(entry)
 		elseif active == entry then
-			close()
+			stop()
 		end
 	end)
+
+	if mine(entry) then
+		begin(entry)
+	end
 end
 
 function CaseFolderController.Start()
@@ -242,6 +345,12 @@ function CaseFolderController.Start()
 			warn("[CaseFolderController] workspace." .. table.concat(StorageConfig.Path, ".") .. " não encontrado.")
 			return
 		end
+	end
+
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", StorageConfig.FolderWait)
+	leaveRemote = remotes and remotes:WaitForChild(StorageConfig.LeaveRemote, StorageConfig.FolderWait)
+	if not leaveRemote then
+		warn("[CaseFolderController] remote " .. StorageConfig.LeaveRemote .. " não apareceu; sair não sai do cliente.")
 	end
 
 	for _, spec in ipairs(StorageConfig.Drawers) do
@@ -264,7 +373,7 @@ function CaseFolderController.Start()
 	sweep()
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed or not active then
+		if gameProcessed or not (active and #active.cases > 0) then
 			return
 		end
 
@@ -278,12 +387,12 @@ function CaseFolderController.Start()
 			KeyHint.Flash(HINT_TAKE)
 			if not takeWarned then
 				takeWarned = true
-				warn("[CaseFolderController] pegar a pasta ainda não existe: falta decidir se ela vai para a mão.")
+				warn("[CaseFolderController] coletar a pasta ainda não existe: falta definir o que coletar faz.")
 			end
 		end
 	end)
 
-	player.CharacterRemoving:Connect(close)
+	player.CharacterRemoving:Connect(stop)
 end
 
 return CaseFolderController

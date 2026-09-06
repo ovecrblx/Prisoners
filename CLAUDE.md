@@ -201,3 +201,8 @@ guarda executável ou só disciplina.
 | `TeleportData` chega `Trusted = false` e é checado antes de conceder | `MatchBootstrap.lua` | — |
 | prompt do cenário é `Style = Custom`; quem desenha é o cliente | `PromptDisplay.lua` | — |
 | `Packages/` fica fora de `Source/` | os dois `Main.server.lua` | — |
+| gaveta é de um jogador por vez, e quem escreve o dono é o servidor | `StorageService.lua` | — |
+| `Open` da gaveta acompanha o `User`: sem dono, fechada | `StorageService.lua` | — |
+| sair da gaveta é gatilho do cliente, mas quem fecha é o servidor | `StorageService.lua` | — |
+| a câmera da gaveta fica do lado da boca e acima da borda | `CaseConfig.lua` | `CaseFitSpec` |
+| dica de tecla de cena que dura usa `KeyHint.Pin`, não `Show` | `KeyHint.lua` | — |

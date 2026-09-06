@@ -18,6 +18,14 @@ StorageConfig.Drawers = {
 -- as seis dividirem o mesmo aberto/fechado.
 StorageConfig.OpenAttribute = "Open"
 
+-- Uso exclusivo, como o telefone e o posto do monitor: uma gaveta é de um jogador de cada vez. O
+-- servidor guarda o dono e publica o UserId dele; 0 é livre. Enquanto tem dono o prompt some, então
+-- ninguém disputa a fila de pastas por cima de quem já está nela.
+-- Sair é do cliente, porque o gatilho é ANDAR e só ele vê isso no quadro do passo — mas quem escreve
+-- o estado é sempre o servidor, e pedido de quem não é dono não passa.
+StorageConfig.UserAttribute = "User"
+StorageConfig.LeaveRemote = "DrawerLeave"
+
 -- Fração da profundidade da caixa que sai do armário. 1 seria a gaveta inteira fora do trilho.
 StorageConfig.Travel = 0.7
 

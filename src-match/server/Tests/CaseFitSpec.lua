@@ -122,6 +122,37 @@ return function(t)
 		t:assert(CaseConfig.NextKey ~= CaseConfig.TakeKey, "avançar e pegar na mesma tecla")
 	end)
 
+	t:test("a câmera fica do lado da boca, e não atrás da gaveta", function()
+		-- A capa das pastas olha para a boca. Câmera do outro lado enquadra o VERSO da fila, e o
+		-- erro é mudo: a vista abre, tudo se move, e o jogador só vê pasta em branco. Basta trocar
+		-- o sinal de CameraOffset.Z num ajuste.
+		t:assert(
+			CaseConfig.CameraOffset.Z * MOUTH.Z > 0,
+			"o olho está em Z=" .. CaseConfig.CameraOffset.Z .. ", do lado do fundo"
+		)
+	end)
+
+	t:test("a câmera olha para baixo, de cima da borda da gaveta", function()
+		-- Abaixo da borda a vista fica rente ao móvel e a fila some atrás da frente da gaveta.
+		-- Medido: 1.6 acima do centro contra 0.49 de meia-altura da caixa, e -40 graus de mergulho.
+		t:assert(CaseConfig.CameraOffset.Y > DRAWER.Y / 2, "o olho tem que passar da borda da gaveta")
+
+		local box = Instance.new("Part")
+		box.CFrame = CFrame.new()
+		local view = CaseConfig.View(box)
+		box:Destroy()
+
+		t:assert(view.LookVector.Y < -0.3, "a vista tem que mergulhar na gaveta, não correr rente")
+	end)
+
+	t:test("sair da gaveta é mais lento que um passo parado", function()
+		-- CancelSpeed alto demais nunca cancela e a gaveta acompanha o jogador pela sala; zerado,
+		-- cancela no tremor do personagem parado.
+		t:assert(CaseConfig.CancelSpeed > 0, "zerado cancela sozinho")
+		t:assert(CaseConfig.CancelSpeed < 1, "acima disso andar deixa de cancelar")
+		t:assert(CaseConfig.SettleWait > 0, "sem janela a gaveta fecha no quadro seguinte ao prompt")
+	end)
+
 	t:test("o nome do caso chega na aba, e o carimbo da capa fica intocado", function()
 		-- MEDIDO: o rótulo da aba é TextButton, e TextButton NÃO é TextLabel — as duas carregam
 		-- `Text` mas são irmãs, não uma descendente da outra. A primeira versão exigia TextLabel,
