@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local StorageConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("StorageConfig"))
+local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx"))
 
 local folder
 local byStorage = {}
@@ -76,6 +77,8 @@ local function play(entry)
 		entry.style = StorageConfig.CloseStyle
 		entry.direction = StorageConfig.CloseDirection
 	end
+
+	Sfx.Play(if entry.open then "DrawerOpen" else "DrawerClose", entry.box)
 
 	active[entry] = true
 

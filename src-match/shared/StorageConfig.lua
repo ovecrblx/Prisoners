@@ -21,11 +21,12 @@ StorageConfig.OpenAttribute = "Open"
 -- Fração da profundidade da caixa que sai do armário. 1 seria a gaveta inteira fora do trilho.
 StorageConfig.Travel = 0.7
 
--- Sair é o gesto de quem puxa, e para na frente; voltar é empurrão que termina no batente.
-StorageConfig.OpenTime = 0.45
+-- Sair é o gesto de quem puxa, e para na frente; voltar é empurrão que termina no batente. Os dois
+-- tempos são os do som: a batida gravada tem que cair no quadro em que a gaveta encosta.
+StorageConfig.OpenTime = 0.8
 StorageConfig.OpenStyle = Enum.EasingStyle.Quint
 StorageConfig.OpenDirection = Enum.EasingDirection.Out
-StorageConfig.CloseTime = 0.38
+StorageConfig.CloseTime = 0.65
 StorageConfig.CloseStyle = Enum.EasingStyle.Quad
 StorageConfig.CloseDirection = Enum.EasingDirection.In
 

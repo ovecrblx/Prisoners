@@ -54,6 +54,16 @@ local SfxConfig = {
 	CurtainUp = { Id = 9114020474, Volume = 0.5, Range = 45 },
 	CurtainDown = { Id = 9113423722, Volume = 0.5, Range = 45 },
 
+	-- Gaveta de metal do armário, presa na caixa que corre. Alcance de móvel, não de evento de sala.
+	-- As duas gravações têm a mesma forma: silêncio, deslize, a batida do batente, e a cauda. A Region
+	-- corta o silêncio de cabeça, que era o atraso ouvido — 0,40s numa, 0,52s na outra — e corta o
+	-- rabo mudo. Speed encaixa a BATIDA no instante em que a gaveta para: medido, ela cai a 1,09s e a
+	-- 1,08s do início do trecho, e o curso do StorageConfig é de 0,80s e 0,65s.
+	-- Volumes diferentes porque as gravações são: com o mesmo ganho a de abrir mede pico 234 e a de
+	-- fechar 81.
+	DrawerOpen = { Id = 9116570823, Volume = 0.35, Speed = 1.36, Range = 25, Region = NumberRange.new(0.4, 2.4) },
+	DrawerClose = { Id = 9116581685, Volume = 0.7, Speed = 1.66, Range = 25, Region = NumberRange.new(0.5, 2.2) },
+
 	-- Ambiente da hélice, em laço preso nela: quem chega perto ouve, e o "perto" é a atenuação do
 	-- próprio Sound. Loja: create.roblox.com/store/asset/124398148205753
 	FanLoop = { Id = 124398148205753, Volume = 0.105, Range = 40, Looped = true },
