@@ -209,3 +209,7 @@ guarda executável ou só disciplina.
 | o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | as folhas do elevador correm para o lado da folha `ElevatorPocket`, e cada uma tem o seu curso | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | o prompt do elevador mora no botão `Call`, com a âncora virada para o corredor | `ElevatorService.lua` | `ElevatorSlideSpec` |
+| o escuro dos dois places vem de `GeographicLatitude = 283`, não de `ClockTime = 12` | `Lighting` de cada place | — |
+| o corpo do Match é o rig DENTRO do Package `127188560784122`, em `ServerStorage.Rigs.Character` — não uma cópia | `RigLibrary.lua` | `RigLookSpec` |
+| NPC com rig custom mora em `ServerStorage.Rigs.Npc.<Classe>`, é autorado completo e não passa por `Dress` | `RigLibrary.lua` | `RigLookSpec` |
+| `OverheadCardConfig.FacingRadius` é igual ao `SurfaceGui.MaxDistance` do template, que mora no place | `OverheadCardConfig.lua` | `OverheadCardSpec` |
