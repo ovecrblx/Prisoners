@@ -3,16 +3,22 @@
 -- precisa de cores, pastas e limites de GUI; expõe tuning, nunca estado de IA.
 local NpcConfig = {}
 
--- Classes de NPC. Rig em ReplicatedStorage.Client.Npc.<Classe>; cada uma tem árvore própria e
--- pode ter rede de rota própria além da principal (RouteData.RouteType = Main + estas).
+-- Classes de NPC. Todas nascem do mesmo rig; o que as separa é NpcConfig.LOOKS. Cada uma tem árvore
+-- própria e pode ter rede de rota própria além da principal (RouteData.RouteType = Main + estas).
 NpcConfig.Classes = { "Citizen", "Medic", "Guard", "Detective" }
 
 -- ============================================================== CORPOS E NASCIMENTO
 
--- Caminho do template a partir de ReplicatedStorage: Model DIRETO com o nome da classe. O rig do
--- jogador, em Client.Character, tem um filho "Rig" — aqui não tem, e os dois não compartilham
--- resolvedor.
-NpcConfig.BODY_SOURCE = { "Client", "Npc" }
+-- Aparência por classe, aplicada sobre o corpo padrão que RigLibrary entrega. Shirt/Pants em
+-- rbxassetid; Accessories são nomes em ServerStorage.Rigs.Accessories.<Classe>.
+-- Classe com rig custom em ServerStorage.Rigs.Npc.<Classe> NÃO entra aqui: ela é autorada completa,
+-- com roupa e Animate próprios, e RigLibrary.Body a devolve sem vestir.
+NpcConfig.LOOKS = {
+	Citizen = { Shirt = "rbxassetid://10490258776", Pants = "rbxassetid://10490263290" },
+	Medic = { Shirt = "rbxassetid://16403480536", Pants = "rbxassetid://16403694955" },
+	Guard = { Shirt = "rbxassetid://79216673501908", Pants = "rbxassetid://125966993565881" },
+	Detective = { Shirt = "rbxassetid://94474587811696", Pants = "rbxassetid://92858965926465" },
+} :: { [string]: { Shirt: string, Pants: string, Accessories: { string }? } }
 
 -- Pasta em workspace que recebe os corpos vivos; entra no filtro de raycast do builder.
 NpcConfig.BODY_FOLDER = "NpcBodies"

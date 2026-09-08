@@ -14,6 +14,7 @@ local ShiftConfig = require(Shared:WaitForChild("ShiftConfig"))
 local Source = ServerScriptService:WaitForChild("Source")
 local Npc = Source:WaitForChild("Npc")
 local DoorService = require(Source:WaitForChild("World"):WaitForChild("DoorService"))
+local RigLibrary = require(Source:WaitForChild("Character"):WaitForChild("RigLibrary"))
 local NpcAgent = require(Npc:WaitForChild("NpcAgent"))
 local NpcAnimator = require(Npc:WaitForChild("NpcAnimator"))
 local BehaviourTree = require(Npc:WaitForChild("BehaviourTree"))
@@ -46,30 +47,13 @@ local function warnOnce(key: string, message: string)
 	warn(message)
 end
 
--- FindFirstChild e nunca WaitForChild: sem ReplicatedStorage.Client, a espera pendura o boot.
+-- FindFirstChild e nunca WaitForChild: sem a pasta, a espera pendura o boot.
 local function descend(root: Instance, path: { string }): Instance?
 	local current: Instance? = root
 	for _, name in ipairs(path) do
 		current = current and current:FindFirstChild(name)
 	end
 	return current
-end
-
-local function bodyTemplate(class: string): Model?
-	local folder = descend(ReplicatedStorage, NpcConfig.BODY_SOURCE)
-	local template = folder and folder:FindFirstChild(class)
-	if template and template:IsA("Model") then
-		return template
-	end
-	warnOnce(
-		"body:" .. class,
-		string.format(
-			"[NpcService] corpo de %s ausente em ReplicatedStorage.%s; a classe não nasce.",
-			class,
-			table.concat(NpcConfig.BODY_SOURCE, ".")
-		)
-	)
-	return nil
 end
 
 local function spawnMarker(class: string): BasePart?
@@ -158,7 +142,7 @@ function NpcService.Spawn(class: string, id: string?): NpcAgent.Agent?
 		return nil
 	end
 
-	local template = bodyTemplate(class)
+	local template, custom = RigLibrary.Body(class)
 	local marker = spawnMarker(class)
 	if not template or not marker then
 		return nil
@@ -166,6 +150,9 @@ function NpcService.Spawn(class: string, id: string?): NpcAgent.Agent?
 
 	local character = (template :: Model):Clone()
 	character.Name = agentId
+	if not custom then
+		RigLibrary.Dress(character, class, NpcConfig.LOOKS[class])
+	end
 
 	-- Animate é LocalScript: em Model do workspace não roda, e replica ~60 filhos por corpo.
 	local animate = character:FindFirstChild("Animate")

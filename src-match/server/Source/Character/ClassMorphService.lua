@@ -1,6 +1,6 @@
--- Spawna o jogador como o Rig da classe equipada, lido do perfil. Sem classe, cai no avatar
--- padrão. CharacterAutoLoads fica desligado: o spawn automático apareceria com o avatar do
--- jogador antes da troca.
+-- Spawna o jogador como a classe equipada, lida do perfil: o corpo é o rig único de RigLibrary e a
+-- classe é a roupa aplicada em cima. Sem classe, cai no avatar padrão. CharacterAutoLoads fica
+-- desligado: o spawn automático apareceria com o avatar do jogador antes da troca.
 local ClassMorphService = {}
 
 local Players = game:GetService("Players")
@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ClassConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ClassConfig"))
 local PlayerData = require(script.Parent.Parent:WaitForChild("Data"):WaitForChild("PlayerData"))
+local RigLibrary = require(script.Parent:WaitForChild("RigLibrary"))
 
 -- Segundos até renascer depois da morte.
 local RESPAWN_DELAY = 5
@@ -18,27 +19,6 @@ local SPAWN_OFFSET = 4
 -- O perfil carrega em outra thread; PlayerData.Get devolve nil até lá.
 local POLL_INTERVAL = 0.25
 local POLL_TIMEOUT = 15
-
-local warnedMissingRig = {}
-
-local function rigTemplate(classId)
-	local entry = ClassConfig.Get(classId)
-	if not entry then
-		return nil
-	end
-
-	local client = ReplicatedStorage:FindFirstChild("Client")
-	local characters = client and client:FindFirstChild("Character")
-	local folder = characters and characters:FindFirstChild(entry.Rig)
-	local template = folder and folder:FindFirstChild("Rig")
-
-	if not template and not warnedMissingRig[entry.Rig] then
-		warnedMissingRig[entry.Rig] = true
-		warn("[ClassMorphService] Rig ausente em Client.Character." .. entry.Rig .. "; usando o avatar padrão.")
-	end
-
-	return template
-end
 
 local function spawnCFrame()
 	local spawnLocation = workspace:FindFirstChildOfClass("SpawnLocation")
@@ -77,10 +57,12 @@ local function watchDeath(player, humanoid)
 	end)
 end
 
--- O template vem ancorado, de servir ao viewer do Lobby; em jogo precisa cair no chão.
-local function buildCharacter(player, template)
+-- Veste ANTES de parentar: o corpo chega pronto, sem o jogador ver a roupa trocar.
+local function buildCharacter(player, template, entry)
 	local rig = template:Clone()
 	rig.Name = player.Name
+
+	RigLibrary.Dress(rig, entry.Id, entry)
 
 	for _, descendant in ipairs(rig:GetDescendants()) do
 		if descendant:IsA("BasePart") then
@@ -113,7 +95,8 @@ function spawnFor(player)
 	local classId = PlayerData.GetEquippedClass(player)
 	player:SetAttribute(ClassConfig.EquippedAttribute, classId)
 
-	local template = rigTemplate(classId)
+	local entry = ClassConfig.Get(classId)
+	local template = entry and RigLibrary.Base()
 	if not template then
 		local ok, err = pcall(player.LoadCharacterAsync, player)
 		if not ok then
@@ -122,7 +105,7 @@ function spawnFor(player)
 		return
 	end
 
-	buildCharacter(player, template)
+	buildCharacter(player, template, entry)
 end
 
 function ClassMorphService.Init()
