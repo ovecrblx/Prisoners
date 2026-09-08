@@ -11,6 +11,7 @@
 return function(t)
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
 	local ElevatorConfig = t:freshRequire(ReplicatedStorage.Shared.ElevatorConfig)
+	local DoorConfig = t:freshRequire(ReplicatedStorage.Shared.DoorConfig)
 
 	-- MEDIDO NO PLACE, em interactive.Elevator: a laje `Floor` tem 9.000 x 0.175 x 6.900 e o topo dela
 	-- fica em Y 2.184; o pé-direito interno é 6.958. O painel `Control` traz `F0`, `F1`, `F2`, `Open`,
@@ -194,16 +195,52 @@ return function(t)
 	end)
 
 	t:test("a cabine anda o curso, e não um tempo fixo por viagem", function()
-		-- MEDIDO: F0 a F2 são 31.810 studs, quatro vezes o vão de um andar. Uma duração fixa faria a
-		-- viagem longa correr quatro vezes mais rápido que a curta.
+		-- MEDIDO: um vão de andar são 16.000 studs e F0 a F2 são 31.810, quase o dobro. Uma duração
+		-- fixa faria a viagem longa correr quase duas vezes mais rápido que a curta. Os segundos são
+		-- literais de propósito: dividir pelo próprio `Speed` passa em qualquer velocidade, e o ritmo
+		-- pedido — 2.8 studs/s — voltaria aos 8 originais sem nada ficar vermelho.
 		local floors = ElevatorConfig.Floors
 		local short = ElevatorConfig.Travel(floors[2].Lift, floors[3].Lift)
 		local long = ElevatorConfig.Travel(floors[1].Lift, floors[3].Lift)
 
-		t:assertNear(short, 16.000 / ElevatorConfig.Speed, 1e-3, "um andar")
-		t:assertNear(long, 31.810 / ElevatorConfig.Speed, 1e-3, "dois andares")
+		t:assertNear(short, 5.714, 1e-3, "um andar, a 2.8 studs/s")
+		t:assertNear(long, 11.361, 1e-3, "dois andares, na mesma velocidade")
 		t:assert(long > short * 1.9, "a viagem longa não custa quase o dobro")
 		t:assertEqual(ElevatorConfig.Travel(0, 0), ElevatorConfig.MinTravel, "sem curso, ainda sobra o piso de duração")
+	end)
+
+	t:test("o passageiro afundado volta para a laje em vez de guardar a queda do quadro", function()
+		-- VISTO EM PLAY: o corpo entra no chão da cabine enquanto ela sobe, e quem olha o vizinho vê
+		-- pior ainda. O carry somava só o DELTA do quadro, então tudo o que a física tirasse entre um
+		-- quadro e o outro ficava guardado para sempre. MEDIDO: Gravity 196.2 e 60 Hz dão 0.027 stud
+		-- por quadro sem contato resolvido, contra 0.047 de subida a 2.8 studs/s — a sobra se soma
+		-- quadro a quadro até o corpo atravessar a laje. A altura absoluta devolve a folga inteira.
+		local top = 2.184
+		local rise = 0.047
+		local stand = top + rise + ElevatorConfig.RideStand
+		local sunk = top + ElevatorConfig.RideStand - 0.081
+
+		t:assertNear(ElevatorConfig.RideY(top + rise, sunk, rise), stand, 1e-6, "quem afundou volta para a laje")
+		t:assertNear(sunk + rise, stand - 0.081, 1e-6, "somar só o delta guardaria os três quadros de queda")
+		t:assertNear(
+			ElevatorConfig.RideY(top + rise, top + ElevatorConfig.RideStand, rise),
+			stand,
+			1e-6,
+			"de pé, a altura sai da laje nova"
+		)
+	end)
+
+	t:test("quem salta dentro da cabine sobe junto em vez de ser cravado no piso", function()
+		-- MEDIDO no rig do place: JumpHeight 7.2 com Gravity 196.2 dá 53.2 studs/s de saída, 0.886 stud
+		-- no primeiro quadro a 60 Hz — bem acima da faixa de 0.5 que conta como de pé. Cravar todo
+		-- quadro tiraria o salto inteiro dentro da cabine; só levar o delta deixaria o corpo afundar.
+		local top = 2.184
+		local rise = 0.047
+		local jumped = top + ElevatorConfig.RideStand + 0.886
+
+		t:assert(ElevatorConfig.RideCatch < 0.886, "a faixa de pé engoliria o primeiro quadro do salto")
+		t:assertNear(ElevatorConfig.RideY(top + rise, jumped, rise), jumped + rise, 1e-6, "no ar, o delta")
+		t:assertNear(ElevatorConfig.RideStand, 1.937 + 1, 1e-3, "HipHeight mais a meia altura do HumanoidRootPart")
 	end)
 
 	t:test("o visor parado ocupa a mesma largura do visor em curso", function()
@@ -326,7 +363,8 @@ return function(t)
 		t:assertEqual(ElevatorConfig.MoveCooldown, 3, "o intervalo entre cursos")
 		t:assert(ElevatorConfig.DoorCooldown > 0, "sem resfriamento a porta aceita o toque seguinte na hora")
 
-		local run = 1.1
+		local run = DoorConfig.ElevatorCloseTime
+		t:assertNear(run, 1.43, 1e-6, "a folha corre 1.43 s, e é ela que o resfriamento espera")
 		t:assertNear(ElevatorConfig.DoorHold(run, true), run, 1e-6, "abrir só espera a folha parar")
 		t:assertNear(ElevatorConfig.DoorHold(run, false), run + ElevatorConfig.DoorCooldown, 1e-6, "fechar espera a folha e o resfriamento")
 
@@ -336,18 +374,58 @@ return function(t)
 	end)
 
 	t:test("o curso sai do relógio do servidor, e não de um cronômetro que começa no aviso", function()
-		-- MEDIDO: F1 a F2 são 16.000 studs, 2.000 s a 8 studs/s. Um cronômetro local poria a cabine em
+		-- MEDIDO: F1 a F2 são 16.000 studs, 5.714 s a 2.8 studs/s. Um cronômetro local poria a cabine em
 		-- alturas diferentes em cada tela, e quem recebesse o Model pelo streaming no meio da viagem a
 		-- veria recomeçar do andar de partida — atravessando a laje na frente de quem já estava lá.
 		local started = 1000
 		local duration = ElevatorConfig.Travel(0, 16.000)
 
-		t:assertNear(duration, 2.000, 1e-3, "o curso de um andar")
+		t:assertNear(duration, 5.714, 1e-3, "o curso de um andar")
 		t:assertNear(ElevatorConfig.Progress(started, started, duration), 0, 1e-6, "no instante da partida")
-		t:assertNear(ElevatorConfig.Progress(started, started + 1, duration), 0.5, 1e-6, "quem chegou no meio pega o meio")
-		t:assertNear(ElevatorConfig.Progress(started, started + 9, duration), 1, 1e-6, "depois do fim não passa de 1")
+		t:assertNear(ElevatorConfig.Progress(started, started + duration / 2, duration), 0.5, 1e-6, "quem chegou no meio pega o meio")
+		t:assertNear(ElevatorConfig.Progress(started, started + 12, duration), 1, 1e-6, "depois do fim não passa de 1")
 		t:assertNear(ElevatorConfig.Progress(started, started - 3, duration), 0, 1e-6, "relógio atrasado não volta o curso")
 		t:assertNear(ElevatorConfig.Progress(started, started, 0), 1, 1e-6, "sem curso, já chegou")
+	end)
+
+	t:test("uma correção do relógio do servidor no meio do curso não sacode a cabine", function()
+		-- VISTO EM PLAY: a cabine treme na subida. `Workspace:GetServerTimeNow()` é uma estimativa
+		-- sincronizada, e a página dele NÃO TEM DESCRIÇÃO: de quanto ele se corrige não está
+		-- documentado e não dá para medir fora de Play — os 0.010 s abaixo são a escala do efeito, não
+		-- uma medição. Lido a cada quadro, cada correção entra direto na altura; ancorado uma vez por
+		-- curso, o curso corre pelo relógio local e continua saindo do mesmo instante em toda tela.
+		local span = ElevatorConfig.Travel(0, 16.000)
+
+		t:assertEqual(ElevatorConfig.Anchor(100, 1000, 1000), 100, "o curso que sai agora começa no agora local")
+		t:assertNear(
+			ElevatorConfig.Progress(ElevatorConfig.Anchor(100, 1000, 1000), 100 + span / 2, span),
+			0.5,
+			1e-6,
+			"o meio do curso pelo relógio local"
+		)
+
+		local ahead = ElevatorConfig.Progress(1000, 1000 + span / 2 + 0.010, span)
+		local behind = ElevatorConfig.Progress(1000, 1000 + span / 2 - 0.010, span)
+		t:assertNear((ahead - behind) * 16.000, 0.056, 1e-3, "0.020 s de correção valem 0.056 stud de salto")
+
+		-- `StartedAt` vem no FUTURO, com o fechamento da folha embutido: a âncora vira espera local.
+		local lead = ElevatorConfig.Anchor(100, 1000, 1001.43)
+		t:assertNear(lead, 101.43, 1e-6, "o instante publicado no futuro continua no futuro")
+		t:assertEqual(ElevatorConfig.Progress(lead, 100, span), 0, "com a folha ainda fechando, a cabine não saiu")
+	end)
+
+	t:test("o desenho do elevador corre antes da câmera, e não depois da física", function()
+		-- VISTO EM PLAY: de dentro da cabine, ela e os outros jogadores tremem. MEDIDO no Studio: por
+		-- quadro os `BindToRenderStep` correm em ordem de prioridade e só então vem `PreRender`; o
+		-- passo de render vem ANTES da física do quadro. Desenhar em `PreSimulation` deixava a física
+		-- mexer no corpo DEPOIS da correção, e a sobra do quadro ia parar na câmera, que mora na
+		-- cabeça de quem viaja — de dentro, o mundo inteiro treme junto.
+		t:assert(
+			ElevatorConfig.RenderOrder < Enum.RenderPriority.Camera.Value,
+			"a correção do corpo precisa chegar antes de a câmera ler a cabeça"
+		)
+		t:assertEqual(ElevatorConfig.RenderOrder, 199, "uma casa antes de Camera, que é 200")
+		t:assert(#ElevatorConfig.RenderStep > 0, "o passo ligado por nome precisa de nome para ser desligado")
 	end)
 
 	t:test("a caixa da cabine sobe com ela, mesmo com a laje do servidor parada", function()

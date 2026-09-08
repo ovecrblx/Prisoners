@@ -50,8 +50,10 @@ local blocking
 local state = { floor = 1, going = 0, startedAt = 0, open = false }
 local lift = 0
 local riding = false
+local riders = {}
+local rideAnchor = 0
 
-local stepLink
+local stepBound
 local attributeLink
 local pending = false
 
@@ -72,8 +74,9 @@ local function basePivot()
 end
 
 local function ensureStep()
-	if not stepLink then
-		stepLink = RunService.PreSimulation:Connect(step)
+	if not stepBound then
+		stepBound = true
+		RunService:BindToRenderStep(ElevatorConfig.RenderStep, ElevatorConfig.RenderOrder, step)
 	end
 end
 
@@ -179,19 +182,49 @@ local function aboard()
 	return ElevatorConfig.Aboard(rig.floor, base.Position, ground(base.Position))
 end
 
--- Peça ancorada movida por CFrame não leva ninguém junto, então o passageiro anda o mesmo delta na
--- mão. Quem é o passageiro foi decidido quando a cabine SAIU, e não se remede a cada quadro: um
--- quadro em que a conta diga não — no salto, no encontrão — largaria no meio do poço quem está
--- dentro. Cada cliente move só o próprio personagem, e é por isso que dois passageiros funcionam.
-local function carry(rise)
-	local character, base = root()
+-- Quem a cabine leva neste curso, decidido por ESTE cliente para TODOS os personagens. A cabine é
+-- desenho local, então o passageiro também tem que ser: a posição do vizinho chega pela rede alguns
+-- quadros atrasada, e desenhá-lo por ela o enterra na laje enquanto ela sobe.
+local function scanRiders()
+	table.clear(riders)
 
-	if not (character and base) then
-		riding = false
-		return
+	for _, other in ipairs(Players:GetPlayers()) do
+		local character = other.Character
+		local base = character and (character.PrimaryPart or character:FindFirstChild("HumanoidRootPart"))
+
+		if base and ElevatorConfig.Aboard(rig.floor, base.Position, ground(base.Position)) then
+			riders[character] = true
+		end
 	end
 
-	character:PivotTo(character:GetPivot() + rise)
+	riding = player.Character ~= nil and riders[player.Character] == true
+end
+
+-- O passageiro é levado por altura ABSOLUTA, e não pelo delta do quadro: peça ancorada movida por
+-- CFrame não leva ninguém junto, e o que a física tirar num quadro o delta guarda para sempre — é
+-- essa sobra somada que afunda o corpo na laje. Quem está no ar leva o delta, senão o salto some.
+local function carry(slabTop, rise)
+	for character in pairs(riders) do
+		local base = character.Parent and (character.PrimaryPart or character:FindFirstChild("HumanoidRootPart"))
+
+		if base then
+			local pivot = character:GetPivot()
+			local wanted = ElevatorConfig.RideY(slabTop, pivot.Y, rise)
+
+			character:PivotTo(pivot + Vector3.new(0, wanted - pivot.Y, 0))
+		else
+			riders[character] = nil
+		end
+	end
+
+	riding = player.Character ~= nil and riders[player.Character] == true
+end
+
+-- Ancora o curso no relógio LOCAL. O relógio do servidor é lido UMA vez por curso: ele é estimativa
+-- sincronizada e se corrige sozinha, e cada correção lida no meio do caminho entra direto na altura
+-- da cabine.
+local function anchorRide()
+	rideAnchor = ElevatorConfig.Anchor(os.clock(), Workspace:GetServerTimeNow(), state.startedAt)
 end
 
 -- Devolve a altura e a fração crua do curso. `StartedAt` vem publicado no FUTURO, com a espera do
@@ -206,7 +239,7 @@ local function heightNow()
 
 	local goal = ElevatorConfig.Floors[state.going].Lift
 	local span = ElevatorConfig.Travel(here, goal)
-	local raw = ElevatorConfig.Progress(state.startedAt, Workspace:GetServerTimeNow(), span)
+	local raw = ElevatorConfig.Progress(rideAnchor, os.clock(), span)
 
 	return here + (goal - here) * TweenService:GetValue(raw, ElevatorConfig.Style, ElevatorConfig.Direction), raw
 end
@@ -256,13 +289,11 @@ function step(delta)
 	-- primeiro quadro em que ela ANDA — sem isso, quem apertou o andar e deu um passo para trás
 	-- durante o fechamento sairia flutuando pelo corredor, carregado por uma cabine que ficou longe.
 	if state.going ~= 0 and raw <= 0 then
-		riding = aboard()
+		scanRiders()
 	end
 
 	if height ~= lift then
-		if riding then
-			carry(Vector3.new(0, height - lift, 0))
-		end
+		carry(homeTop + height, height - lift)
 		lift = height
 	end
 
@@ -282,9 +313,9 @@ function step(delta)
 	end
 	table.clear(retire)
 
-	if state.going == 0 and alpha == target and not next(presses) and stepLink then
-		stepLink:Disconnect()
-		stepLink = nil
+	if state.going == 0 and alpha == target and not next(presses) and stepBound then
+		stepBound = nil
+		RunService:UnbindFromRenderStep(ElevatorConfig.RenderStep)
 	end
 end
 
@@ -368,8 +399,10 @@ local function sync()
 		state = ElevatorConfig.State(cabin)
 
 		if before == 0 and state.going ~= 0 then
-			riding = aboard()
+			anchorRide()
+			scanRiders()
 		elseif state.going == 0 then
+			table.clear(riders)
 			riding = false
 		end
 
@@ -505,9 +538,9 @@ local function detach()
 	bindPanel(false)
 	dropDoor()
 
-	if stepLink then
-		stepLink:Disconnect()
-		stepLink = nil
+	if stepBound then
+		stepBound = nil
+		RunService:UnbindFromRenderStep(ElevatorConfig.RenderStep)
 	end
 
 	if attributeLink then
@@ -524,6 +557,7 @@ local function detach()
 	cabin = nil
 	rig = nil
 	lift = 0
+	table.clear(riders)
 	riding = false
 end
 
@@ -589,7 +623,9 @@ local function attach(folder, doors)
 	homeTop = rig.floor.Position.Y + rig.floor.Size.Y / 2
 
 	state = ElevatorConfig.State(cabin)
+	anchorRide()
 	lift = ElevatorConfig.Floors[state.floor].Lift
+	table.clear(riders)
 	riding = false
 
 	grabDoor(doors)

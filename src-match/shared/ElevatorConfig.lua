@@ -46,8 +46,15 @@ ElevatorConfig.RideProbe = 6
 -- mais baixo que o de pé.
 ElevatorConfig.FloorSlack = 1
 
--- Curso: studs/s e o piso de duração, para o andar vizinho não virar um pulo.
-ElevatorConfig.Speed = 8
+-- studs entre o topo da laje e o pivô de quem está DE PÉ nela, e a faixa acima disso que ainda conta
+-- como de pé. MEDIDO no rig do place: HipHeight 1.937 mais a meia altura do HumanoidRootPart de
+-- 2 x 2 x 1. Acima da faixa o passageiro está no ar — pulou — e leva o deslocamento do quadro.
+ElevatorConfig.RideStand = 2.937
+ElevatorConfig.RideCatch = 0.5
+
+-- Curso: studs/s e o piso de duração, para o andar vizinho não virar um pulo. A 2.8 studs/s o vão
+-- de um andar leva 5.714 s e a ponta a ponta 11.361 s.
+ElevatorConfig.Speed = 2.8
 ElevatorConfig.MinTravel = 0.6
 ElevatorConfig.Style = Enum.EasingStyle.Quad
 ElevatorConfig.Direction = Enum.EasingDirection.InOut
@@ -65,6 +72,13 @@ ElevatorConfig.MoveCooldown = 3
 -- s entre uma varredura e a seguinte: é ela que liga o painel ao entrar, desliga ao sair, e muda a
 -- cabine de andar enquanto o jogador está fora.
 ElevatorConfig.ScanInterval = 0.25
+
+-- Nome e prioridade do passo de desenho, no render e não na física. MEDIDO no Studio: por quadro os
+-- `BindToRenderStep` correm em ordem de prioridade e só então vem `PreRender`, e o passo de render
+-- vem antes da física do quadro. Uma casa antes de `Camera` é onde a correção do corpo ainda alcança
+-- a câmera, que mora na cabeça de quem viaja.
+ElevatorConfig.RenderStep = "ElevatorRide"
+ElevatorConfig.RenderOrder = Enum.RenderPriority.Camera.Value - 1
 
 -- Tecla: studs que ela afunda pela face da SurfaceGui e os s de uma perna do curso — o retorno é a
 -- mesma perna ao contrário.
@@ -146,6 +160,20 @@ function ElevatorConfig.Aboard(floorPart, position, ground)
 	return ground == floorPart and ElevatorConfig.Inside(floorPart, position)
 end
 
+-- Onde o passageiro fica no quadro em que a cabine subiu `rise`. De pé, é a laje mais a altura do
+-- rig, CRAVADA: somar só o delta guarda para sempre o que a física tirou naquele quadro, e a queda
+-- de cada quadro se soma até o corpo atravessar a laje. No ar o delta vale, senão o salto some.
+function ElevatorConfig.RideY(slabTop, pivotY, rise)
+	local stand = slabTop + ElevatorConfig.RideStand
+	local moved = pivotY + rise
+
+	if moved <= stand + ElevatorConfig.RideCatch then
+		return stand
+	end
+
+	return moved
+end
+
 -- Em que andar está um Y do mundo. `homeTop` é o topo da laje da cabine na pose autorada, e o plano
 -- de cada andar é ele mais o `Lift` — os andares e a cabine saem do mesmo número, e não de duas
 -- listas que divergem em silêncio. Abaixo de todos cai no mais baixo: quem cai no poço não fica sem
@@ -195,6 +223,14 @@ function ElevatorConfig.Progress(startedAt, now, duration)
 	end
 
 	return math.clamp((now - startedAt) / duration, 0, 1)
+end
+
+-- O instante do relógio LOCAL em que o curso começou. `Workspace:GetServerTimeNow()` é uma estimativa
+-- sincronizada que se corrige sozinha: lida a cada quadro, cada correção entra direto na altura da
+-- cabine e vira tremor. Lida uma vez por curso, o curso corre liso e continua saindo do mesmo
+-- instante em todas as telas.
+function ElevatorConfig.Anchor(now, serverNow, startedAt)
+	return now - (serverNow - startedAt)
 end
 
 function ElevatorConfig.State(model)

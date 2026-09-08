@@ -214,10 +214,13 @@ guarda executável ou só disciplina.
 | a porta só abre com a cabine parada no andar DELA; `Open` é compartilhado mas só vale ali, e fora disso o visor diz ocupado | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | a porta de quem está dentro sobe COLADA na cabine (`DoorLift`); o posto dela (`DoorFloor`) fica no andar de partida até a chegada, porque trocar de posto a teleporta e a fecha de uma vez | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | o curso é interpolado do `StartedAt` do relógio do servidor, não de um cronômetro que começa quando o aviso chega | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| o relógio do servidor é lido UMA vez por curso e ancorado no relógio local (`Anchor`): lido a cada quadro, cada correção da sincronia entra na altura da cabine e vira tremor | `ElevatorController.lua` | `ElevatorRideSpec` |
+| o desenho do elevador roda em `BindToRenderStep` uma casa antes de `Camera`, nunca em `PreSimulation`: ali a física ainda mexe no corpo DEPOIS da correção, e a sobra vai para a câmera, que mora na cabeça de quem viaja | `ElevatorController.lua` | `ElevatorRideSpec` |
 | os vãos entre andares NÃO são iguais: F0 −15.810, F1 0, F2 +16.000 studs da pose autorada | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | a folha fechada é o que tapa um poço de 16 studs, e ela é publicada com `CanCollide = false` | `ElevatorController.lua` | — |
 | passageiro é quem a caixa da cabine aceita **e** cujo chão é a laje — a caixa sozinha aceita o vão da porta | `ElevatorConfig.lua` | `ElevatorRideSpec` |
-| quem viaja é decidido no primeiro quadro em que a cabine ANDA — não quando o andar é apertado —, e cada cliente move só o próprio personagem | `ElevatorController.lua` | — |
+| quem viaja é decidido no primeiro quadro em que a cabine ANDA — não quando o andar é apertado — e cada cliente decide isso para TODOS os personagens, porque a cabine é desenho local e a posição que chega pela rede é de alguns quadros atrás | `ElevatorController.lua` | — |
+| o passageiro é levado por altura ABSOLUTA (`RideY`), nunca pelo delta do quadro: o delta guarda o que a física tirou e a sobra somada afunda o corpo na laje | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | curso em andamento não é interrompido nem enfileirado, e o próximo espera `MoveCooldown`; a porta espera `DoorCooldown` depois de FECHAR | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | o fechamento e o curso saem num aviso só: `StartedAt` é publicado no futuro, já com a espera da folha embutida | `ElevatorService.lua` | — |
 | a laje do servidor nunca sai da pose autorada: a caixa do ocupante é levantada por `InsideAt` | `ElevatorService.lua` | `ElevatorRideSpec` |
