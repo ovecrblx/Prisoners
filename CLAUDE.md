@@ -205,6 +205,10 @@ guarda executável ou só disciplina.
 | `Open` da gaveta acompanha o `User`: sem dono, fechada | `StorageService.lua` | — |
 | sair da gaveta é gatilho do cliente, mas quem fecha é o servidor | `StorageService.lua` | — |
 | a câmera da gaveta fica do lado da boca e acima da borda | `CaseConfig.lua` | `CaseFitSpec` |
+| a fila de pastas só se projeta acima da borda com a gaveta FORA: guardada ela some dentro da caixa, sobe depois de o curso terminar, e desce antes de o móvel a engolir | `CaseConfig.lua` | `CaseFitSpec` |
+| o quanto a fila afunda sai do molde e da caixa (`StowDepth`), nunca de constante: molde reautorado muda a sobra acima da borda junto | `CaseConfig.lua` | `CaseFitSpec` |
+| o recolhimento vale em TODA gaveta da lista, não só na deste jogador: a gaveta do outro é vista daqui, e a pasta é mais alta que a caixa | `CaseFolderController.lua` | — |
+| toda pose de pasta é escrita num lugar só, e sai da pose de repouso lida NO MOMENTO em que a pasta aparece: relida depois do recolhimento ela guardaria o afundamento junto, e a fila desceria de novo a cada varredura | `CaseFolderController.lua` | — |
 | dica de tecla de cena que dura usa `KeyHint.Pin`, não `Show` | `KeyHint.lua` | — |
 | o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | as folhas do elevador correm para o lado da folha `ElevatorPocket`, e cada uma tem o seu curso | `DoorConfig.lua` | `ElevatorSlideSpec` |

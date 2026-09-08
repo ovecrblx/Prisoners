@@ -1,12 +1,15 @@
--- A gaveta em uso por ESTE jogador: a vista, a fila de pastas, o destaque e o levante da escolhida.
+-- A fila de pastas de caso das gavetas: onde cada pasta pousa, o recolhimento dela dentro da caixa,
+-- e — na gaveta deste jogador — a vista, o destaque e o levante da escolhida.
 -- Quem decide de quem é a gaveta é o servidor, e publica no atributo dela; aqui só se lê. Percorrer
 -- a fila não muda estado de mundo, então não passa pela rede — só sair passa, porque quem fecha a
 -- gaveta é o servidor.
 -- Andar larga a gaveta, como largar o telefone: o gatilho é do cliente porque só ele vê o passo no
 -- quadro em que acontece.
--- A pasta destacada sobe no eixo do MUNDO, e a conta sai da pose de repouso guardada no referencial
--- da caixa: a gaveta corre enquanto a fila está viva, e pose absoluta guardada uma vez ficaria para
--- trás no primeiro puxão.
+-- O recolhimento vale em TODA gaveta da lista, não só na deste jogador: a gaveta do outro é vista
+-- daqui, e a pasta é mais alta que a caixa. Toda pose de pasta é escrita AQUI, num lugar só: sai da
+-- pose de repouso guardada no referencial da caixa, e o recolhimento e o destaque somam no mesmo
+-- eixo do MUNDO. A gaveta corre enquanto a fila está viva, e pose absoluta guardada uma vez ficaria
+-- para trás no primeiro puxão.
 local CaseFolderController = {}
 
 local Players = game:GetService("Players")
@@ -42,12 +45,12 @@ local active
 local selected = 0
 local highlight
 local lifting = {}
+local rising = {}
 local links = {}
 local stepConnection
 local render = false
 local settled = false
 local token = 0
-local step
 local takeWarned = false
 
 local function coverOf(model)
@@ -55,36 +58,40 @@ local function coverOf(model)
 	return if part and part:IsA("BasePart") then part else nil
 end
 
-local function restOf(entry, case)
-	local at = entry.rest[case]
-	if not at then
-		at = entry.box.CFrame:ToObjectSpace(case.model:GetPivot())
-		entry.rest[case] = at
-	end
-	return at
-end
-
 local function apply(entry, case)
-	local goal = entry.box.CFrame * restOf(entry, case)
-	case.model:PivotTo(goal + Vector3.new(0, case.height, 0))
-end
-
-local function play(entry, case, up)
-	case.from = case.height
-	case.goal = if up then entry.lift else 0
-	case.elapsed = 0
-
-	if case.goal == case.from then
+	local rest = entry.rest[case.model]
+	if not rest then
 		return
 	end
 
-	lifting[case] = entry
-	if not stepConnection then
-		stepConnection = RunService.PreSimulation:Connect(step)
+	local sunk = entry.stow * (1 - entry.rise)
+	case.model:PivotTo(entry.box.CFrame * rest + Vector3.new(0, case.height - sunk, 0))
+end
+
+local function poseAll(entry)
+	if not (entry.cases and entry.box and entry.box.Parent) then
+		return
+	end
+
+	for _, case in ipairs(entry.cases) do
+		apply(entry, case)
 	end
 end
 
-function step(delta)
+local function step(delta)
+	for entry in pairs(rising) do
+		entry.riseElapsed += delta
+
+		local phase = CaseConfig.RiseProgress(entry.riseElapsed, entry.riseOpen)
+		local eased = TweenService:GetValue(phase, CaseConfig.RiseStyle, CaseConfig.RiseDirection)
+		entry.rise = entry.riseFrom + (entry.riseGoal - entry.riseFrom) * eased
+		poseAll(entry)
+
+		if phase >= 1 then
+			rising[entry] = nil
+		end
+	end
+
 	for case, entry in pairs(lifting) do
 		case.elapsed = math.min(case.elapsed + delta, CaseConfig.LiftTime)
 
@@ -101,10 +108,94 @@ function step(delta)
 		end
 	end
 
-	if not next(lifting) and stepConnection then
+	if not (next(lifting) or next(rising)) and stepConnection then
 		stepConnection:Disconnect()
 		stepConnection = nil
 	end
+end
+
+local function wake()
+	if not stepConnection then
+		stepConnection = RunService.PreSimulation:Connect(step)
+	end
+end
+
+local function play(entry, case, up)
+	case.from = case.height
+	case.goal = if up then entry.lift else 0
+	case.elapsed = 0
+
+	if case.goal == case.from then
+		return
+	end
+
+	lifting[case] = entry
+	wake()
+end
+
+-- A fila sobe depois do curso e desce durante o fechamento. `animate` falso é para quem chega com a
+-- gaveta já parada: streaming trazendo o móvel de volta não é um puxão.
+local function setRise(entry, open, animate)
+	local goal = if open then 1 else 0
+
+	if not entry.cases then
+		entry.rise = goal
+		return
+	end
+
+	if not animate then
+		rising[entry] = nil
+		entry.rise = goal
+		poseAll(entry)
+		return
+	end
+
+	if entry.rise == goal and not rising[entry] then
+		return
+	end
+
+	entry.riseFrom = entry.rise
+	entry.riseGoal = goal
+	entry.riseOpen = open
+	entry.riseElapsed = 0
+
+	rising[entry] = true
+	wake()
+end
+
+-- A pose de repouso de cada pasta é lida NO MOMENTO em que ela aparece, que é a pose semeada pelo
+-- servidor. Relida depois do recolhimento, ela guardaria o afundamento junto, e a fila desceria de
+-- novo a cada varredura.
+local function scan(entry)
+	local cases = {}
+	local cover
+
+	for _, child in ipairs(entry.model:GetChildren()) do
+		if child:IsA("Model") and child:GetAttribute(CaseConfig.IdAttribute) then
+			table.insert(cases, {
+				model = child,
+				slot = child:GetAttribute(CaseConfig.SlotAttribute) or 0,
+				height = 0,
+				from = 0,
+				goal = 0,
+				elapsed = 0,
+			})
+
+			if not entry.rest[child] then
+				entry.rest[child] = entry.box.CFrame:ToObjectSpace(child:GetPivot())
+			end
+
+			cover = cover or coverOf(child)
+		end
+	end
+
+	table.sort(cases, function(a, b)
+		return a.slot < b.slot
+	end)
+
+	entry.cases = cases
+	entry.lift = if cover then cover.Size.Y * CaseConfig.Lift else 0
+	entry.stow = if cover then CaseConfig.StowDepth(entry.height, cover.Size) else 0
 end
 
 -- Um Highlight só, mudando de dono. A página do Highlight não descreve Adornee nem o teto de
@@ -145,29 +236,6 @@ local function focus(index)
 	play(active, case, true)
 	adorn(case.model)
 	Sfx.Play("CaseSelect", coverOf(case.model))
-end
-
-local function casesIn(model)
-	local list = {}
-
-	for _, child in ipairs(model:GetChildren()) do
-		if child:IsA("Model") and child:GetAttribute(CaseConfig.IdAttribute) then
-			table.insert(list, {
-				model = child,
-				slot = child:GetAttribute(CaseConfig.SlotAttribute) or 0,
-				height = 0,
-				from = 0,
-				goal = 0,
-				elapsed = 0,
-			})
-		end
-	end
-
-	table.sort(list, function(a, b)
-		return a.slot < b.slot
-	end)
-
-	return list
 end
 
 -- Em Scriptable o módulo de câmera larga o volante. O enquadramento chega por percurso e não por
@@ -217,8 +285,8 @@ local function stop()
 		for _, case in ipairs(active.cases) do
 			lifting[case] = nil
 			case.height = 0
-			apply(active, case)
 		end
+		poseAll(active)
 	end
 
 	if highlight then
@@ -248,19 +316,9 @@ end
 local function begin(entry)
 	stop()
 
-	local model = StorageConfig.Find(folder, entry.spec)
-	local rig = model and StorageConfig.Rig(model)
-	if not rig then
+	if not (entry.cases and entry.box and entry.box.Parent) then
 		return
 	end
-
-	local cases = casesIn(model)
-	local cover = cases[1] and coverOf(cases[1].model)
-
-	entry.box = rig.box
-	entry.cases = cases
-	entry.rest = {}
-	entry.lift = if cover then cover.Size.Y * CaseConfig.Lift else 0
 
 	active = entry
 	selected = 0
@@ -270,7 +328,7 @@ local function begin(entry)
 
 	-- Gaveta vazia continua sendo uso exclusivo e continua tendo vista: o que ela não tem é fila para
 	-- percorrer, então a dica de tecla também não entra.
-	if #cases > 0 then
+	if #entry.cases > 0 then
 		KeyHint.Pin({
 			{ key = CaseConfig.PrevKey, text = CaseConfig.PrevHint },
 			{ key = CaseConfig.TakeKey, text = CaseConfig.TakeHint },
@@ -309,31 +367,83 @@ local function begin(entry)
 end
 
 local function mine(entry)
-	local model = StorageConfig.Find(folder, entry.spec)
-	local userId = model and model:GetAttribute(StorageConfig.UserAttribute)
+	local userId = entry.model and entry.model:GetAttribute(StorageConfig.UserAttribute)
 	return type(userId) == "number" and userId == player.UserId
 end
 
-local function watch(entry)
+local function published(entry)
+	return entry.model ~= nil and entry.model:GetAttribute(StorageConfig.OpenAttribute) == true
+end
+
+local function counted(model)
+	local total = 0
+
+	for _, child in ipairs(model:GetChildren()) do
+		if child:IsA("Model") and child:GetAttribute(CaseConfig.IdAttribute) then
+			total += 1
+		end
+	end
+
+	return total
+end
+
+-- Com streaming a gaveta pode chegar depois deste Start, pode ir e voltar, e as pastas podem chegar
+-- depois da gaveta. Caixa nova é referencial novo, então a pose de repouso guardada morre com ela.
+local function bind(entry)
 	local model = StorageConfig.Find(folder, entry.spec)
-	if not model or entry.model == model then
+	local rig = model and StorageConfig.Rig(model)
+
+	if not rig then
+		rising[entry] = nil
+		entry.box = nil
+		entry.cases = nil
 		return
 	end
 
-	entry.model = model
-	if entry.link then
-		entry.link:Disconnect()
+	local fresh = entry.box ~= rig.box
+
+	if fresh then
+		entry.model = model
+		entry.box = rig.box
+		entry.height = rig.height
+		entry.rest = {}
+		entry.cases = nil
+		entry.rise = 0
+		entry.stow = 0
+		rising[entry] = nil
+
+		if entry.link then
+			entry.link:Disconnect()
+		end
+
+		entry.link = model:GetAttributeChangedSignal(StorageConfig.OpenAttribute):Connect(function()
+			setRise(entry, published(entry), true)
+		end)
+
+		if entry.owner then
+			entry.owner:Disconnect()
+		end
+
+		entry.owner = model:GetAttributeChangedSignal(StorageConfig.UserAttribute):Connect(function()
+			if mine(entry) then
+				begin(entry)
+			elseif active == entry then
+				stop()
+			end
+		end)
 	end
 
-	entry.link = model:GetAttributeChangedSignal(StorageConfig.UserAttribute):Connect(function()
-		if mine(entry) then
-			begin(entry)
-		elseif active == entry then
-			stop()
-		end
-	end)
+	local rescanned = false
 
-	if mine(entry) then
+	if not entry.cases or #entry.cases ~= counted(model) then
+		scan(entry)
+		setRise(entry, published(entry), false)
+		rescanned = true
+	end
+
+	-- Gaveta nova, ou fila nova numa gaveta que já é desta pessoa. Chamado em toda varredura, `begin`
+	-- reabriria a vista no intervalo entre soltar a gaveta e o servidor devolver o `User`.
+	if mine(entry) and (fresh or (rescanned and active == entry)) then
 		begin(entry)
 	end
 end
@@ -356,14 +466,12 @@ function CaseFolderController.Start()
 	end
 
 	for _, spec in ipairs(StorageConfig.Drawers) do
-		table.insert(drawers, { spec = spec })
+		table.insert(drawers, { spec = spec, rise = 0, stow = 0, rest = {} })
 	end
 
-	-- Com streaming a gaveta pode chegar depois deste Start e pode ir e voltar; a escuta do atributo
-	-- vai junto com o exemplar.
 	local function sweep()
 		for _, entry in ipairs(drawers) do
-			watch(entry)
+			bind(entry)
 		end
 	end
 

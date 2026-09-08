@@ -14,6 +14,7 @@
 return function(t)
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
 	local CaseConfig = t:freshRequire(ReplicatedStorage.Shared.CaseConfig)
+	local StorageConfig = t:freshRequire(ReplicatedStorage.Shared.StorageConfig)
 
 	-- MEDIDO NO PLACE, e igual nas 24 gavetas: caixa 1.426 x 0.981 x 3.063. A boca é o -Z LOCAL
 	-- dela, medido nos dois sentidos de armário.
@@ -174,5 +175,49 @@ return function(t)
 		t:assertEqual(labelText, "ALVO", "nome na aba de topo")
 		t:assertEqual(image, "rbxassetid://1", "retrato")
 		t:assertEqual(stampText, "TOP SECRET", "o carimbo da capa não pode ser tocado")
+	end)
+
+	t:test("com a gaveta guardada a fila some dentro da caixa", function()
+		-- O DEFEITO: a pose de repouso encosta a BASE da pasta no piso, e a pasta é mais alta que a
+		-- caixa — então a sobra fica acima da borda SEMPRE, gaveta fechada inclusive, e atravessa o
+		-- móvel. MEDIDO NO PLACE: caixa 0.9808 de altura, pasta 1.148, sobra 0.1667.
+		local center, size = placed(1, CaseConfig.PerDrawer)
+		local sink = CaseConfig.StowDepth(DRAWER.Y, metrics.size)
+		local top = center.Position.Y + size.Y / 2 - sink
+		local rim = DRAWER.Y / 2
+
+		t:assert(top <= rim, "recolhida, a fila ainda sobra " .. string.format("%.4f", top - rim) .. " acima da borda")
+		t:assert(top > rim - size.Y / 2, "a fila afundou tanto que sumiu pelo fundo da gaveta")
+		t:assertNear(sink, 0.1667 + CaseConfig.StowMargin, 1e-3, "o afundamento é a sobra medida mais a folga")
+	end)
+
+	t:test("a fila não se projeta enquanto a gaveta ainda corre", function()
+		-- O DEFEITO: subir junto com o curso põe a sobra da pasta dentro do móvel enquanto a gaveta
+		-- sai — ela atravessa a frente antes de existir boca por onde sair. Os dois relógios partem
+		-- do MESMO aviso, então a espera da fila tem que cobrir o curso inteiro da gaveta.
+		t:assertEqual(
+			CaseConfig.RiseProgress(StorageConfig.OpenTime - 1e-3, true),
+			0,
+			"a fila começou a subir com a gaveta ainda correndo"
+		)
+		t:assert(
+			CaseConfig.RiseProgress(StorageConfig.OpenTime + CaseConfig.RiseTime, true) >= 1,
+			"a fila nunca termina de subir"
+		)
+	end)
+
+	t:test("a fila se recolhe antes de a gaveta bater no batente", function()
+		-- O DEFEITO: recolher no mesmo tempo do fechamento deixa a pasta ainda para fora no quadro em
+		-- que o móvel a engole. MEDIDO: 0.65 s de fechamento contra 0.3 s de recolhimento.
+		t:assert(CaseConfig.SinkTime < StorageConfig.CloseTime, "o recolhimento acaba depois do fechamento")
+		t:assertEqual(
+			CaseConfig.RiseProgress(StorageConfig.CloseTime, false),
+			1,
+			"a fila ainda estava descendo quando a gaveta encostou"
+		)
+		t:assert(
+			StorageConfig.CloseTime - CaseConfig.SinkTime >= 0.2,
+			"a folga entre o fim do recolhimento e o batente ficou curta demais"
+		)
 	end)
 end
