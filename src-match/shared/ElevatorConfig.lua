@@ -86,13 +86,60 @@ ElevatorConfig.KeyDepth = 0.03
 ElevatorConfig.KeyTravel = 0.07
 ElevatorConfig.KeySound = "UiClick"
 
--- Visor. A fonte é PressStart2P, monoespaçada — MEDIDO, " 01", "▲01" e " --" ocupam os mesmos 84 px,
--- então o espaço no lugar da seta guarda a largura e o TextScaled não incha o texto parado.
+-- Som. O leito do curso é um só; o que muda com o comprimento é o freio. O `Ding` toca JUNTO com
+-- qualquer um dos dois freios, nunca sozinho.
+ElevatorConfig.StartSound = "ElevatorStart"
+ElevatorConfig.RunSound = "ElevatorRun"
+ElevatorConfig.StopSound = "ElevatorStop"
+ElevatorConfig.RushStopSound = "ElevatorRushStop"
+ElevatorConfig.DingSound = "ElevatorDing"
+ElevatorConfig.FailSound = "ElevatorFail"
+ElevatorConfig.OpenSound = "ElevatorDoorOpen"
+ElevatorConfig.CloseSound = "ElevatorDoorClose"
+
+-- Andares de vão a partir dos quais a cabine embala e troca de freio.
+ElevatorConfig.RushFloors = 2
+
+-- s ANTES da chegada em que o leito de movimento cala e o freio entra. São os comprimentos MEDIDOS
+-- de cada gravação de parada, 1.380 s a curta e 4.178 s a longa, para cada uma TERMINAR no instante
+-- em que a cabine para. Aumentar aqui adianta o freio e encurta o leito; o teto é a duração do curso
+-- mais curto, 5.714 s, senão o leito não chega a tocar.
+ElevatorConfig.StopLead = 1.380
+ElevatorConfig.RushStopLead = 4.178
+
+-- s que o leito leva para sumir POR BAIXO do freio. Ele não é cortado no quadro em que o freio entra:
+-- desce a zero por cima dele, e o freio cobre a saída. Cortado seco o que se ouve é um talho — o
+-- ronco some de uma vez e o freio começa do silêncio, ainda mais se a gravação dele tiver silêncio de
+-- cabeça, que em Edit não dá para medir. Tem de ser menor que `StopLead`, o freio mais curto, senão
+-- quem acaba por último é o leito e o talho só muda de lugar.
+ElevatorConfig.BedFade = 0.8
+
+-- Tranco da câmera de quem VIAJA: um a cada laje que a cabine cruza no meio do curso, e outro, maior,
+-- na parada. `ShakeTime` é quanto ele dura, `ShakeWaves` quantas meias ondas ele dá enquanto morre,
+-- `ShakeSway` o quanto ele sai do vertical, e `ShakeFloor` o piso do sorteio de força, para dois
+-- trancos seguidos não saírem idênticos nem um deles sair imperceptível.
+ElevatorConfig.ShakePass = 0.18
+ElevatorConfig.ShakeStop = 0.32
+ElevatorConfig.ShakeTime = 0.45
+ElevatorConfig.ShakeWaves = 2.5
+ElevatorConfig.ShakeSway = 0.35
+ElevatorConfig.ShakeFloor = 0.6
+
+-- Visor. O número mora numa peça de GUI e as setas noutras: `ScreenNumber` é o andar e cada irmão
+-- com o prefixo `ScreenArrow` é uma seta do sentido. A fonte PressStart2P é monoespaçada — MEDIDO
+-- com `GetTextBoundsAsync` a 45 px, "01" e "02" dão 50 x 45 e "▲" e "▼" dão 25 x 45 cada, então
+-- trocar de andar ou de sentido não incha o TextScaled.
 ElevatorConfig.ScreenDigits = 2
-ElevatorConfig.ScreenIdle = " %s"
-ElevatorConfig.ScreenUp = "▲%s"
-ElevatorConfig.ScreenDown = "▼%s"
-ElevatorConfig.ScreenBusy = " --"
+ElevatorConfig.ScreenNumber = "TextButton"
+ElevatorConfig.ScreenArrow = "Vfx"
+ElevatorConfig.ArrowUp = "▲"
+ElevatorConfig.ArrowDown = "▼"
+
+-- s de uma volta das setas, e a transparência do número. Aceso é o andar em que a cabine ESTÁ;
+-- apagado é o andar que ela acabou de passar — é o que separa "cheguei" de "passei por aqui".
+ElevatorConfig.ArrowPeriod = 0.9
+ElevatorConfig.NumberHere = 0
+ElevatorConfig.NumberPassing = 0.4
 
 -- Estado publicado pelo servidor nos atributos do Model da cabine. `Floor` é o índice do andar em que
 -- ela está, `Going` o destino enquanto viaja (0 parada), `StartedAt` o relógio de servidor em que o
@@ -196,6 +243,48 @@ function ElevatorConfig.InsideAt(floorPart, position, lift)
 	return ElevatorConfig.Inside(floorPart, position - Vector3.new(0, lift, 0))
 end
 
+-- O quanto do tranco ainda vale, na fração `t` dele. A onda faz o corpo ir e voltar, que é o que se
+-- lê como solavanco; o envelope a mata. Sem o envelope o deslocamento fica preso na câmera, e sem a
+-- onda é um empurrão só, que se lê como teleporte.
+function ElevatorConfig.ShakeFall(t)
+	if t >= 1 then
+		return 0
+	end
+
+	return (1 - t) * math.cos(t * math.pi * ElevatorConfig.ShakeWaves)
+end
+
+-- Direção e força do tranco, em espaço do corpo, a partir de quatro sorteios de 0 a 1. Quase todo
+-- VERTICAL: o elevador solavanca no eixo em que anda, e a pitada lateral só tira a repetição. `up`
+-- decide o lado, porque o tranco tanto joga o corpo para baixo quanto o solta para cima.
+function ElevatorConfig.ShakeAxis(up, side, push, force)
+	local scale = ElevatorConfig.ShakeFloor + (1 - ElevatorConfig.ShakeFloor) * force
+
+	return Vector3.new(
+		(side * 2 - 1) * ElevatorConfig.ShakeSway,
+		if up < 0.5 then -1 else 1,
+		(push * 2 - 1) * ElevatorConfig.ShakeSway
+	) * scale
+end
+
+-- Curso longo é o que atravessa `RushFloors` andares ou mais: só nele a cabine tem pista para embalar.
+-- MEDIDO a 2.8 studs/s: um andar leva 5.714 s e ponta a ponta 11.361 s.
+function ElevatorConfig.Rush(from, to)
+	return math.abs(to - from) >= ElevatorConfig.RushFloors
+end
+
+-- Em que fração do curso o freio entra. `lead` são os s que a gravação leva, e ela tem de TERMINAR na
+-- chegada: entrando NA chegada, que era o que acontecia antes, o freio soa com a cabine já parada e o
+-- jogador ouve o elevador frear depois de ter chegado. Curso curto demais para a gravação inteira
+-- começa freando, e não sem freio.
+function ElevatorConfig.StopAt(span, lead)
+	if span <= 0 then
+		return 0
+	end
+
+	return math.max(0, (span - lead) / span)
+end
+
 function ElevatorConfig.Travel(from, to)
 	return math.max(math.abs(to - from) / ElevatorConfig.Speed, ElevatorConfig.MinTravel)
 end
@@ -283,53 +372,86 @@ function ElevatorConfig.DoorOpen(state, doorFloor)
 	return state.open and ElevatorConfig.Operable(state, doorFloor)
 end
 
-local function heading(state)
+-- Para que lado a cabine vai: 1 sobe, -1 desce, 0 parada.
+function ElevatorConfig.Heading(state)
+	if state.going == 0 then
+		return 0
+	end
+
 	local here = ElevatorConfig.Floors[state.floor]
 	local target = ElevatorConfig.Floors[state.going]
-	return ElevatorConfig.ScreenText(state.going, if target.Lift > here.Lift then 1 else -1)
+
+	return if target.Lift > here.Lift then 1 else -1
 end
 
--- Visor de dentro da cabine: para onde ela vai, ou onde parou.
-function ElevatorConfig.CabinText(state)
-	if state.going == 0 then
-		return ElevatorConfig.ScreenText(state.floor, 0)
-	end
-
-	return heading(state)
-end
-
--- Visor da porta: o número só aparece com a cabine parada no andar dela. Em curso mostra para onde a
--- cabine vai, e com ela noutro andar mostra ocupado — porque é isso que a porta vai fazer se alguém
--- apertar. O jogador precisa saber POR QUE nada aconteceu.
-function ElevatorConfig.DoorText(state, floorIndex)
-	if state.going ~= 0 then
-		return heading(state)
-	end
-
-	if not ElevatorConfig.Operable(state, floorIndex) then
-		return ElevatorConfig.ScreenBusy
-	end
-
-	return ElevatorConfig.ScreenText(state.floor, 0)
-end
-
--- Texto do visor: o andar mostrado e a seta do sentido. 0 é parado, e aí a seta vira espaço.
-function ElevatorConfig.ScreenText(index, direction)
+function ElevatorConfig.Digits(index)
 	local floor = ElevatorConfig.Floors[index]
+
 	if not floor then
 		return ""
 	end
 
-	local digits = string.format("%0" .. ElevatorConfig.ScreenDigits .. "d", floor.Level)
-	local form = ElevatorConfig.ScreenIdle
+	return string.format("%0" .. ElevatorConfig.ScreenDigits .. "d", floor.Level)
+end
 
-	if direction > 0 then
-		form = ElevatorConfig.ScreenUp
-	elseif direction < 0 then
-		form = ElevatorConfig.ScreenDown
+-- Que andar a cabine acabou de PASSAR, com ela em `lift`. O umbral é o do sentido: subindo é o
+-- último plano que ficou abaixo dela, descendo é o último que ficou acima. A regra sem sentido — o
+-- plano de baixo, sempre — marca o andar seguinte no primeiro stud de descida, e o passageiro lê que
+-- passou por F1 com 16 studs ainda pela frente.
+function ElevatorConfig.PassedAt(lift, direction)
+	if direction < 0 then
+		for index, floor in ipairs(ElevatorConfig.Floors) do
+			if floor.Lift >= lift then
+				return index
+			end
+		end
+
+		return #ElevatorConfig.Floors
 	end
 
-	return string.format(form, digits)
+	local best = 1
+
+	for index, floor in ipairs(ElevatorConfig.Floors) do
+		if lift >= floor.Lift then
+			best = index
+		end
+	end
+
+	return best
+end
+
+-- O que o visor mostra: o texto, o sentido da seta, e se aquele andar é onde a cabine PAROU. É UM só
+-- para os dois visores, o de dentro e o da porta: eles respondem a MESMA pergunta — onde a cabine
+-- está e para onde ela vai —, e a porta continua sem obedecer com a cabine longe, o que é outra
+-- conta. Em curso o número é o andar de passagem e sai apagado; aceso ele diria que a porta abre ali.
+function ElevatorConfig.Screen(state, lift)
+	local direction = ElevatorConfig.Heading(state)
+
+	if direction == 0 then
+		return ElevatorConfig.Digits(state.floor), 0, true
+	end
+
+	return ElevatorConfig.Digits(ElevatorConfig.PassedAt(lift, direction)), direction, false
+end
+
+-- Curso de uma volta das setas, tirado das alturas em que elas foram autoradas: é o vão entre duas
+-- vizinhas vezes o NÚMERO delas. Correr só o vão — a conta óbvia — faz a seta que sai por cima
+-- renascer um vão acima da de baixo em vez de no lugar dela, e a volta ganha um buraco.
+function ElevatorConfig.ArrowSpan(lowest, highest, count)
+	if count < 2 then
+		return 0
+	end
+
+	return (highest - lowest) * count / (count - 1)
+end
+
+-- Onde cada seta fica na volta, de 0 a 1, e quanto ela aparece. Todas correm juntas, e a
+-- transparência sai da POSIÇÃO na volta e não do relógio: saísse do relógio, o mesmo seno valeria
+-- para todas e elas apagariam no mesmo instante, dando um piscão por volta em vez de um desfile.
+function ElevatorConfig.Arrow(slot, count, phase, direction)
+	local cycle = (slot / count - direction * phase) % 1
+
+	return cycle, 1 - math.sin(math.pi * cycle)
 end
 
 -- Laje, painel, visor e teclas, ou nada quando falta a laje ou o painel. Tecla é peça do painel com

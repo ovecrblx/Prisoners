@@ -46,6 +46,31 @@ local SfxConfig = {
 	-- A porta dupla fecha com batida própria: ela abre por aproximação e fecha sozinha, e o estalo da
 	-- porta comum não dá o peso das duas folhas encontrando.
 	DualDoorClose = { Id = 9114603534, Volume = 0.5, Range = 40 },
+
+	-- Elevador. O leito do curso é UM, `ElevatorRun` em laço, e serve os dois comprimentos. O que muda
+	-- com o comprimento é o FREIO: `ElevatorStop` no vão de um andar, que a 2.8 studs/s leva 5.714 s, e
+	-- `ElevatorRushStop` no de ponta a ponta, de 11.361 s, que é o único em que a cabine embala.
+	-- `ElevatorDing` toca JUNTO com qualquer um dos dois freios, nunca sozinho. MEDIDO por TimeLength
+	-- com o asset carregado: leito 7.424 s, freio curto 1.380 s, freio longo 4.178 s, pib 3.483 s.
+	-- A Region do `ElevatorStart` é ESCOLHIDA e não medida: a gravação tem 9.856 s, mais que o curso de
+	-- um andar inteiro, e ficaria roncando por cima da parada e do pib. Em Edit a engine não roda o
+	-- relógio do áudio, então o silêncio de cabeça dela não dá para medir daqui.
+	ElevatorStart = { Id = 131524195375919, Volume = 0.45, Range = 45, Region = NumberRange.new(0, 2.4) },
+	ElevatorRun = { Id = 18454901772, Volume = 0.28, Range = 45, Looped = true },
+	ElevatorStop = { Id = 138536649055227, Volume = 0.5, Range = 45 },
+	ElevatorRushStop = { Id = 96634021666432, Volume = 0.5, Range = 45 },
+	ElevatorDing = { Id = 99196320086922, Volume = 0.55, Range = 40 },
+
+	-- Recusa do painel: curso em andamento, resfriamento, ou o andar em que a cabine já está. Region
+	-- ESCOLHIDA pelo mesmo motivo da partida — 4.879 s medidos é tempo demais para um aperto.
+	ElevatorFail = { Id = 70996898460509, Volume = 0.4, Range = 20, Region = NumberRange.new(0, 1.2) },
+
+	-- As folhas do elevador têm gravação própria: a porta de dobradiça não dá o peso de duas folhas
+	-- correndo no trilho. 3.049 s e 3.771 s MEDIDOS, contra 1.43 s de curso da folha; a 1.15 de Speed
+	-- caem para 2.651 s e 3.279 s. A cauda passa da folha de propósito, que é o mecanismo assentando.
+	ElevatorDoorOpen = { Id = 6431334087, Volume = 0.5, Speed = 1.15, Range = 40 },
+	ElevatorDoorClose = { Id = 139444721219064, Volume = 0.5, Speed = 1.15, Range = 40 },
+
 	-- Dois eventos por acionamento, com gravação e lugar próprios. A alavanca é o estalo do gesto e
 	-- sai da `Right Root`, onde o jogador interage; a cortina é o curso das barras e sai delas,
 	-- esticada para durar o movimento inteiro.

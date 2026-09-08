@@ -211,7 +211,17 @@ guarda executável ou só disciplina.
 | o prompt do elevador mora no botão `Call`, com a âncora virada para o corredor | `ElevatorService.lua` | `ElevatorSlideSpec` |
 | o elevador é UM no mundo: o estado mora em atributos do servidor e o movimento é desenhado por cada cliente — nenhuma CFrame do elevador replica | `ElevatorService.lua` | — |
 | a cabine é COMPARTILHADA e a porta é DE CADA JOGADOR: existe um `Door_Elevator` só, e cada cliente o desenha no andar do jogador local | `ElevatorController.lua` | `ElevatorRideSpec` |
-| a porta só abre com a cabine parada no andar DELA; `Open` é compartilhado mas só vale ali, e fora disso o visor diz ocupado | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| a porta só abre com a cabine parada no andar DELA; `Open` é compartilhado mas só vale ali | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| os dois visores — o de dentro e o do corredor — são a MESMA função `Screen`: os dois dizem onde a cabine está e para onde vai, e nenhum deles diz ocupado; quem recusa é a porta, não o visor | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| o número do visor é o andar que a cabine acabou de PASSAR, e o umbral é o do sentido: subindo, o plano que ficou abaixo; descendo, o que ficou acima | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| número ACESO é o andar em que a cabine parou, APAGADO é andar de passagem: os dois escrevem o mesmo dígito e dizem coisas opostas | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| as setas do visor são os irmãos com o prefixo `Vfx` na SurfaceGui, ordenados pela ALTURA autorada; a volta corre o vão entre elas vezes o número delas, e a transparência sai da posição na volta e nunca do relógio, senão todas apagam no mesmo instante | `ElevatorController.lua` | `ElevatorRideSpec` |
+| o leito de som do curso nasce no primeiro quadro em que a cabine ANDA, e não no aviso: `StartedAt` vem publicado no futuro com o fechamento da folha embutido, e o leito no aviso ronca com a cabine parada | `ElevatorController.lua` | — |
+| o freio entra ANTES da chegada, o tanto que a gravação dele leva (`StopAt`), para acabar no instante da parada; o pib vai JUNTO com ele e nunca sozinho, e o leito não é cortado — some por baixo do freio já tocando (`BedFade`) | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| a recusa do painel é PREVISTA no cliente só para tocar o som de falha; o pedido vai para o servidor de qualquer jeito, e quem decide continua sendo ele | `ElevatorController.lua` | — |
+| o tranco da câmera vai em `Humanoid.CameraOffset` e nunca na CFrame da câmera: o passo do elevador corre ANTES do passo da câmera, e uma CFrame escrita ali é sobrescrita no mesmo quadro | `ElevatorController.lua` | — |
+| todo tranco ZERA o offset ao morrer, e o passo de desenho não se desliga com tranco correndo: congelado no meio, o jogador atravessa o mapa com a câmera deslocada e nada avisa | `ElevatorController.lua` | `ElevatorRideSpec` |
+| a laje que dispara o tranco sai do MESMO `PassedAt` que escreve o número do visor, e a do DESTINO não conta — ela é a chegada, que já tem o tranco dela | `ElevatorController.lua` | — |
 | a porta de quem está dentro sobe COLADA na cabine (`DoorLift`); o posto dela (`DoorFloor`) fica no andar de partida até a chegada, porque trocar de posto a teleporta e a fecha de uma vez | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | o curso é interpolado do `StartedAt` do relógio do servidor, não de um cronômetro que começa quando o aviso chega | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | o relógio do servidor é lido UMA vez por curso e ancorado no relógio local (`Anchor`): lido a cada quadro, cada correção da sincronia entra na altura da cabine e vira tremor | `ElevatorController.lua` | `ElevatorRideSpec` |

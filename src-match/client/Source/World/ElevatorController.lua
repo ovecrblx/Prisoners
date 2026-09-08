@@ -28,12 +28,14 @@ local player = Players.LocalPlayer
 
 local cabin
 local rig
+local cabinScreen
 local homeCabin
 local homePrimary
 local homeTop
 local remote
 
 local door
+local doorScreen
 local doorParts = {}
 local doorLeaves = {}
 local doorAxis
@@ -52,6 +54,23 @@ local lift = 0
 local riding = false
 local riders = {}
 local rideAnchor = 0
+local rideOn = false
+local rideBed
+local rideRush = false
+local rideStop = 1
+local shakeStart = 0
+local shakeAxis = Vector3.zero
+local shakeSize = 0
+local shakeRider = false
+local passFloor = 0
+local stopShook = false
+
+-- Espelho local dos resfriamentos do servidor, que ele guarda em `os.clock()` e não publica. Servem
+-- só para o som de recusa: o pedido vai para o servidor de qualquer jeito, e quem decide continua
+-- sendo ele. Erram pela latência da réplica, e errar aqui toca um som a mais ou a menos, nunca perde
+-- um comando.
+local moveReady = 0
+local doorReady = 0
 
 local stepBound
 local attributeLink
@@ -80,26 +99,123 @@ local function ensureStep()
 	end
 end
 
-local function label(part)
-	if not (part and part.Parent) then
+-- Visor: o número e as setas, achados pelo NOME na SurfaceGui da peça e ordenados pela ALTURA em que
+-- foram autorados. O vão entre duas setas vizinhas é o passo do desfile, então mover ou acrescentar
+-- uma seta no place não exige tocar em código. A pose de cada uma fica guardada para a devolução.
+local function screenRig(part)
+	local gui = part and part:FindFirstChildWhichIsA("SurfaceGui")
+
+	if not gui then
 		return nil
 	end
 
-	return part:FindFirstChildWhichIsA("TextLabel", true) or part:FindFirstChildWhichIsA("TextButton", true)
+	local arrows = {}
+
+	for _, child in ipairs(gui:GetChildren()) do
+		local writes = child:IsA("TextLabel") or child:IsA("TextButton")
+
+		if writes and string.sub(child.Name, 1, #ElevatorConfig.ScreenArrow) == ElevatorConfig.ScreenArrow then
+			arrows[#arrows + 1] = child
+		end
+	end
+
+	table.sort(arrows, function(first, second)
+		return first.Position.Y.Scale < second.Position.Y.Scale
+	end)
+
+	local entry = { number = gui:FindFirstChild(ElevatorConfig.ScreenNumber), arrows = arrows, home = {} }
+
+	for index, arrow in ipairs(arrows) do
+		entry.home[index] = { pose = arrow.Position, text = arrow.Text, fade = arrow.TextTransparency }
+	end
+
+	entry.lowest = if arrows[1] then arrows[1].Position.Y.Scale else 0
+	entry.span = if arrows[1]
+		then ElevatorConfig.ArrowSpan(entry.lowest, arrows[#arrows].Position.Y.Scale, #arrows)
+		else 0
+
+	if entry.number then
+		entry.numberHome = { text = entry.number.Text, fade = entry.number.TextTransparency }
+	end
+
+	return entry
 end
 
-local function write(part, text)
-	local face = label(part)
-	if face then
-		face.Text = text
+local function restoreScreen(entry)
+	if not entry then
+		return
+	end
+
+	for index, arrow in ipairs(entry.arrows) do
+		if arrow.Parent then
+			local home = entry.home[index]
+			arrow.Position = home.pose
+			arrow.Text = home.text
+			arrow.TextTransparency = home.fade
+		end
+	end
+
+	if entry.number and entry.number.Parent and entry.numberHome then
+		entry.number.Text = entry.numberHome.text
+		entry.number.TextTransparency = entry.numberHome.fade
+	end
+end
+
+-- O visor de um quadro. O número só é reescrito quando muda de verdade — isto roda a cada quadro, e
+-- gravar a mesma string suja a propriedade à toa. As setas vão sempre, porque é o que as anima:
+-- parada a cabine elas somem e voltam à pose autorada, e o número sozinho diz onde ela está.
+local function drawScreen(entry, text, direction, settled)
+	local number = entry.number
+
+	if number and number.Parent then
+		local fade = if settled then ElevatorConfig.NumberHere else ElevatorConfig.NumberPassing
+
+		if number.Text ~= text then
+			number.Text = text
+		end
+
+		if number.TextTransparency ~= fade then
+			number.TextTransparency = fade
+		end
+	end
+
+	local glyph = if direction < 0 then ElevatorConfig.ArrowDown else ElevatorConfig.ArrowUp
+	local phase = (os.clock() / ElevatorConfig.ArrowPeriod) % 1
+
+	for index, arrow in ipairs(entry.arrows) do
+		if arrow.Parent then
+			local home = entry.home[index]
+
+			if direction == 0 then
+				if arrow.TextTransparency ~= 1 then
+					arrow.TextTransparency = 1
+				end
+
+				if arrow.Position ~= home.pose then
+					arrow.Position = home.pose
+				end
+			else
+				local cycle, fade = ElevatorConfig.Arrow(index - 1, #entry.arrows, phase, direction)
+				local y = if entry.span > 0 then entry.lowest + cycle * entry.span else home.pose.Y.Scale
+
+				if arrow.Text ~= glyph then
+					arrow.Text = glyph
+				end
+
+				arrow.TextTransparency = fade
+				arrow.Position = UDim2.new(home.pose.X.Scale, home.pose.X.Offset, y, home.pose.Y.Offset)
+			end
+		end
 	end
 end
 
 local function paint()
-	write(rig.screen, ElevatorConfig.CabinText(state))
+	if cabinScreen then
+		drawScreen(cabinScreen, ElevatorConfig.Screen(state, lift))
+	end
 
-	if door then
-		write(door:FindFirstChild(ElevatorConfig.ScreenName), ElevatorConfig.DoorText(state, doorFloor))
+	if doorScreen then
+		drawScreen(doorScreen, ElevatorConfig.Screen(state, lift))
 	end
 end
 
@@ -282,6 +398,180 @@ local function advancePresses(delta)
 	end
 end
 
+-- Tranco da câmera, escrito em `Humanoid.CameraOffset` e NÃO na CFrame da câmera: este passo corre uma
+-- casa ANTES do passo da câmera, e uma CFrame escrita aqui seria sobrescrita no mesmo quadro. O
+-- offset o passo da câmera lê e aplica sozinho. A página do `CameraOffset` não tem descrição e não
+-- diz o espaço; o exemplo dela é um balanço de caminhada em Y, que é o eixo que importa aqui.
+local function clearShake()
+	shakeStart = 0
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
+
+	if humanoid then
+		humanoid.CameraOffset = Vector3.zero
+	end
+end
+
+-- Um tranco só de quem está DENTRO: o vizinho no corredor vê a cabine passar e não sente nada.
+local function startShake(size)
+	if not shakeRider then
+		return
+	end
+
+	shakeStart = os.clock()
+	shakeSize = size
+	shakeAxis = ElevatorConfig.ShakeAxis(math.random(), math.random(), math.random(), math.random())
+end
+
+-- Zerar no fim é obrigatório: parado no meio, o deslocamento fica preso e o jogador sai andando pelo
+-- mapa com a cabeça torta. É por isso também que o passo não se desliga com tranco correndo.
+local function applyShake()
+	if shakeStart == 0 then
+		return
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
+
+	if not humanoid then
+		shakeStart = 0
+		return
+	end
+
+	local phase = (os.clock() - shakeStart) / ElevatorConfig.ShakeTime
+
+	if phase >= 1 then
+		shakeStart = 0
+		humanoid.CameraOffset = Vector3.zero
+		return
+	end
+
+	humanoid.CameraOffset = shakeAxis * (shakeSize * ElevatorConfig.ShakeFall(phase))
+end
+
+-- Quando o tranco entra. A laje cruzada sai do MESMO `PassedAt` que escreve o número do visor, então
+-- o solavanco cai no quadro em que o número troca. A do DESTINO não conta: ela é a chegada, e a
+-- chegada já tem o tranco dela, maior — contadas as duas, o jogador leva dois trancos colados.
+local function shakeRide(raw)
+	if state.going == 0 then
+		return
+	end
+
+	if raw <= 0 then
+		shakeRider = riding
+		passFloor = state.floor
+		stopShook = false
+		return
+	end
+
+	if raw >= 1 then
+		if not stopShook then
+			stopShook = true
+			startShake(ElevatorConfig.ShakeStop)
+		end
+
+		return
+	end
+
+	local here = ElevatorConfig.PassedAt(lift, ElevatorConfig.Heading(state))
+
+	if here ~= passFloor then
+		passFloor = here
+
+		if here ~= state.going then
+			startShake(ElevatorConfig.ShakePass)
+		end
+	end
+end
+
+-- Tira o leito de cena sem cortá-lo: ele desce a zero por cima do freio, que já começou, e só então
+-- some. O sumiço vai por Tween e NÃO pelo passo de desenho — o passo se desliga quando a cabine para
+-- e a folha assenta, e um leito no meio do fade ficaria tocando para sempre.
+local function fadeBed(sound)
+	local fade = TweenService:Create(
+		sound,
+		TweenInfo.new(ElevatorConfig.BedFade, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+		{ Volume = 0 }
+	)
+
+	fade.Completed:Connect(function()
+		sound:Destroy()
+	end)
+
+	fade:Play()
+end
+
+-- Onde o freio deste curso entra, em fração, e se ele é o de alta. A conta sai do MESMO par de
+-- andares que decide o leito, então leito e freio nunca discordam sobre o comprimento do curso.
+local function rideBrake()
+	local rush = ElevatorConfig.Rush(state.floor, state.going)
+	local span = ElevatorConfig.Travel(
+		ElevatorConfig.Floors[state.floor].Lift,
+		ElevatorConfig.Floors[state.going].Lift
+	)
+
+	return rush, ElevatorConfig.StopAt(span, if rush then ElevatorConfig.RushStopLead else ElevatorConfig.StopLead)
+end
+
+-- Som do curso, em três tempos: partida, leito e freio. O leito nasce no primeiro quadro em que a
+-- cabine ANDA e não quando o aviso chega — a partida vem publicada no FUTURO, com o fechamento da
+-- folha embutido, e um leito que começasse no aviso roncaria 1.43 s com a cabine parada. O freio
+-- entra ANTES da chegada, o quanto a gravação dele leva, para acabar no instante em que a cabine
+-- para: entrando na chegada ele soa com ela já parada, e leva o pib junto, sempre. O leito não é
+-- cortado quando o freio entra: ele some POR BAIXO de um freio que já está tocando. Quem guarda a vez
+-- é `rideOn` e não o Sound: chave que falte devolve nil, e o leito seria repedido a cada quadro.
+local function rideAudio(raw)
+	if not rideOn then
+		if state.going == 0 or raw <= 0 then
+			return
+		end
+
+		local rush, stopAt = rideBrake()
+
+		-- Entrou no meio do curso, com o freio já passado: sem leito para acompanhar, não há o que
+		-- frear. Um pib avulso anunciaria uma chegada que este cliente não viu acontecer.
+		if raw >= stopAt then
+			return
+		end
+
+		rideOn = true
+		rideRush = rush
+		rideStop = stopAt
+
+		Sfx.Play(ElevatorConfig.StartSound, rig.floor)
+		rideBed = Sfx.Hold(ElevatorConfig.RunSound, rig.floor)
+		return
+	end
+
+	if state.going ~= 0 and raw < rideStop then
+		return
+	end
+
+	rideOn = false
+
+	Sfx.Play(if rideRush then ElevatorConfig.RushStopSound else ElevatorConfig.StopSound, rig.floor)
+	Sfx.Play(ElevatorConfig.DingSound, rig.floor)
+
+	-- Depois dos dois: o leito sai por baixo de um freio que JÁ está tocando.
+	if rideBed then
+		fadeBed(rideBed)
+		rideBed = nil
+	end
+end
+
+-- Cala o curso SEM tocar a parada: a cabine não chegou, ela saiu da tela — streaming, ou o jogador
+-- deixando a sala. O pib aqui anunciaria uma chegada que não houve.
+local function hushRide()
+	rideOn = false
+	rideStop = 1
+
+	if rideBed then
+		rideBed:Destroy()
+		rideBed = nil
+	end
+end
+
 function step(delta)
 	local height, raw = heightNow()
 
@@ -292,10 +582,15 @@ function step(delta)
 		scanRiders()
 	end
 
+	rideAudio(raw)
+
 	if height ~= lift then
 		carry(homeTop + height, height - lift)
 		lift = height
 	end
+
+	shakeRide(raw)
+	applyShake()
 
 	advancePresses(delta)
 	poseCabin()
@@ -308,12 +603,14 @@ function step(delta)
 
 	advanceDoor(delta)
 
+	paint()
+
 	for _, part in ipairs(retire) do
 		presses[part] = nil
 	end
 	table.clear(retire)
 
-	if state.going == 0 and alpha == target and not next(presses) and stepBound then
+	if state.going == 0 and alpha == target and not next(presses) and shakeStart == 0 and stepBound then
 		stepBound = nil
 		RunService:UnbindFromRenderStep(ElevatorConfig.RenderStep)
 	end
@@ -338,7 +635,7 @@ local function aim(open, animate)
 	end
 
 	duration = if open then DoorConfig.ElevatorOpenTime else DoorConfig.ElevatorCloseTime
-	Sfx.Play(if open then "DoorOpen" else "DoorClose", doorLeaves[1].part)
+	Sfx.Play(if open then ElevatorConfig.OpenSound else ElevatorConfig.CloseSound, doorLeaves[1].part)
 	ensureStep()
 end
 
@@ -396,6 +693,7 @@ local function sync()
 		end
 
 		local before = state.going
+		local wasOpen = state.open
 		state = ElevatorConfig.State(cabin)
 
 		if before == 0 and state.going ~= 0 then
@@ -404,6 +702,15 @@ local function sync()
 		elseif state.going == 0 then
 			table.clear(riders)
 			riding = false
+		end
+
+		if before ~= 0 and state.going == 0 then
+			moveReady = os.clock() + ElevatorConfig.MoveCooldown
+		end
+
+		if wasOpen ~= state.open then
+			local run = if state.open then DoorConfig.ElevatorOpenTime else DoorConfig.ElevatorCloseTime
+			doorReady = os.clock() + ElevatorConfig.DoorHold(run, state.open)
 		end
 
 		parkDoor(true)
@@ -424,6 +731,21 @@ local function bell()
 	return remote
 end
 
+-- O que o servidor vai recusar, previsto AQUI só para o som: curso em andamento, resfriamento ainda
+-- correndo, ou a tecla do andar em que a cabine já está. Espelha `travel` e `command` do serviço. O
+-- pedido sai de qualquer jeito — prever errado toca um som a mais, prever e engolir perderia a tecla.
+local function refused(name)
+	local now = os.clock()
+
+	if name == ElevatorConfig.OpenName or name == ElevatorConfig.CloseName then
+		return not ElevatorConfig.Accepts(state, now, doorReady)
+	end
+
+	local index = ElevatorConfig.IndexOf(name)
+
+	return index == nil or index == state.floor or not ElevatorConfig.Accepts(state, now, moveReady)
+end
+
 local function press(key)
 	local part = key.part
 	local entry = presses[part]
@@ -442,6 +764,10 @@ local function press(key)
 
 	ensureStep()
 	Sfx.Play(ElevatorConfig.KeySound, part)
+
+	if refused(part.Name) then
+		Sfx.Play(ElevatorConfig.FailSound, part)
+	end
 
 	if not bell() then
 		return
@@ -508,6 +834,9 @@ local function dropDoor()
 		return
 	end
 
+	restoreScreen(doorScreen)
+	doorScreen = nil
+
 	for _, leaf in ipairs(doorLeaves) do
 		if leaf.part.Parent then
 			leaf.part.CanCollide = leaf.collide
@@ -537,6 +866,10 @@ local function detach()
 
 	bindPanel(false)
 	dropDoor()
+	hushRide()
+	clearShake()
+	restoreScreen(cabinScreen)
+	cabinScreen = nil
 
 	if stepBound then
 		stepBound = nil
@@ -576,6 +909,7 @@ local function grabDoor(doors)
 
 		if slide then
 			door = model
+			doorScreen = screenRig(model:FindFirstChild(ElevatorConfig.ScreenName))
 			doorAxis = slide.axis
 			doorLeaves = slide.leaves
 
@@ -621,6 +955,7 @@ local function attach(folder, doors)
 	cabin.PrimaryPart = rig.floor
 	homeCabin = cabin:GetPivot()
 	homeTop = rig.floor.Position.Y + rig.floor.Size.Y / 2
+	cabinScreen = screenRig(rig.screen)
 
 	state = ElevatorConfig.State(cabin)
 	anchorRide()

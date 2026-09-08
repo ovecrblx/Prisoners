@@ -243,19 +243,81 @@ return function(t)
 		t:assertNear(ElevatorConfig.RideStand, 1.937 + 1, 1e-3, "HipHeight mais a meia altura do HumanoidRootPart")
 	end)
 
-	t:test("o visor parado ocupa a mesma largura do visor em curso", function()
-		-- MEDIDO na fonte do visor, PressStart2P, que é monoespaçada: " 01" e "▲01" dão os mesmos 84
-		-- px. Tirar a seta em vez de trocá-la por espaço encurta o texto, e com TextScaled ligado o
-		-- número parado incharia a cada parada.
-		local idle = ElevatorConfig.ScreenText(2, 0)
-		local up = ElevatorConfig.ScreenText(3, 1)
-		local down = ElevatorConfig.ScreenText(1, -1)
+	t:test("o visor troca de número no umbral do sentido, e não assim que a cabine sai do andar", function()
+		-- MEDIDO no place: os planos dos andares são -15.810, 0 e 16.000. A regra sem sentido — o plano
+		-- ABAIXO da cabine, sempre — marca 01 no primeiro stud de uma descida de F2, e o passageiro lê
+		-- que já passou por F1 com 16 studs pela frente. O erro é mudo: a cabine chega no lugar certo,
+		-- só o visor mente.
+		t:assertEqual(ElevatorConfig.PassedAt(-15.810, 1), 1, "saindo de F0 ainda é F0")
+		t:assertEqual(ElevatorConfig.PassedAt(-0.001, 1), 1, "um milésimo antes do plano de F1 ainda é F0")
+		t:assertEqual(ElevatorConfig.PassedAt(0, 1), 2, "no plano de F1 o número vira F1")
+		t:assertEqual(ElevatorConfig.PassedAt(15.999, 1), 2, "quase em F2 ainda é F1")
+		t:assertEqual(ElevatorConfig.PassedAt(16.000, 1), 3, "no plano de F2 vira F2")
 
-		t:assertEqual(idle, " 01", "parado em F1")
-		t:assertEqual(up, "▲02", "subindo para F2")
-		t:assertEqual(down, "▼00", "descendo para F0")
-		t:assertEqual(utf8.len(idle), utf8.len(up), "parado e subindo têm o mesmo número de células")
-		t:assertEqual(utf8.len(idle), utf8.len(down), "parado e descendo têm o mesmo número de células")
+		t:assertEqual(ElevatorConfig.PassedAt(15.999, -1), 3, "descendo, o número não cai no primeiro stud")
+		t:assertEqual(ElevatorConfig.PassedAt(0.001, -1), 3, "e continua F2 até cruzar o plano de F1")
+		t:assertEqual(ElevatorConfig.PassedAt(0, -1), 2, "no plano de F1 vira F1")
+		t:assertEqual(ElevatorConfig.PassedAt(-15.810, -1), 1, "e só no fim vira F0")
+	end)
+
+	t:test("o número apagado é o andar de passagem, e o aceso é o andar em que a cabine parou", function()
+		-- Sem essa diferença o visor escreve o mesmo "01" subindo de F0 para F2 e parado em F1, e são
+		-- leituras opostas: uma diz "passei por aqui", a outra diz "é aqui que a porta vai abrir". Quem
+		-- espera no corredor entra na cabine que estava só de passagem.
+		local up = { floor = 1, going = 3, open = false }
+		local passing, heading, stopped = ElevatorConfig.Screen(up, 0)
+
+		t:assertEqual(passing, "01", "no plano de F1 o visor mostra o andar que a cabine passou")
+		t:assertEqual(heading, 1, "e a seta aponta para cima")
+		t:assert(not stopped, "andar de passagem saiu aceso, como se a cabine tivesse parado ali")
+
+		local parked = { floor = 2, going = 0, open = false }
+		local here, still, settled = ElevatorConfig.Screen(parked, 0)
+
+		t:assertEqual(here, "01", "parada em F1")
+		t:assertEqual(still, 0, "cabine parada não tem seta")
+		t:assert(settled, "o andar em que ela parou saiu apagado")
+		t:assertNear(ElevatorConfig.NumberPassing - ElevatorConfig.NumberHere, 0.4, 1e-6, "aceso e apagado ficaram iguais")
+	end)
+
+	t:test("o curso de uma volta das setas é o vão entre elas vezes o número delas", function()
+		-- MEDIDO na SurfaceGui do place: as duas setas foram autoradas em Y 0.30 e 0.60 do visor, 0.30
+		-- de vão. Correr só esse vão — a conta óbvia — faz a seta que sai por cima renascer 0.30 acima
+		-- da que ficou, em vez de no lugar dela: a volta ganha um buraco do tamanho de uma seta, e o
+		-- desfile engasga uma vez por ciclo.
+		t:assertNear(ElevatorConfig.ArrowSpan(0.30, 0.60, 2), 0.60, 1e-6, "duas setas com 0.30 de vão correm 0.60")
+		t:assertNear(ElevatorConfig.ArrowSpan(0.30, 0.90, 3), 0.90, 1e-6, "três setas com 0.30 de vão correm 0.90")
+		t:assertEqual(ElevatorConfig.ArrowSpan(0.30, 0.30, 1), 0, "uma seta sozinha não tem para onde correr")
+
+		local span = ElevatorConfig.ArrowSpan(0.30, 0.60, 2)
+		local first = ElevatorConfig.Arrow(0, 2, 0, 1)
+		local second = ElevatorConfig.Arrow(1, 2, 0, 1)
+
+		t:assertNear(0.30 + first * span, 0.30, 1e-6, "no começo da volta a primeira seta sai da pose autorada")
+		t:assertNear(0.30 + second * span, 0.60, 1e-6, "e a segunda sai da dela")
+	end)
+
+	t:test("as duas setas nunca apagam no mesmo instante, e a volta fecha sem emenda", function()
+		-- A transparência sai da POSIÇÃO na volta. Saísse do relógio, o mesmo seno valeria para as duas
+		-- e elas apagariam juntas uma vez por ciclo: um piscão de 0.9 s no meio da subida, que parece
+		-- falha de rede e não efeito. MEDIDO: o pior instante é o meio do salto entre elas, com as duas
+		-- em 1 - sin(3π/4) = 0.293 — sempre há seta na tela.
+		local worst = 0
+
+		for tick = 0, 99 do
+			local _, lower = ElevatorConfig.Arrow(0, 2, tick / 100, 1)
+			local _, upper = ElevatorConfig.Arrow(1, 2, tick / 100, 1)
+
+			worst = math.max(worst, math.min(lower, upper))
+		end
+
+		t:assertNear(worst, 1 - math.sin(math.pi * 3 / 4), 1e-3, "houve instante com as duas setas apagadas")
+
+		local head, headFade = ElevatorConfig.Arrow(0, 2, 0, 1)
+		local tail, tailFade = ElevatorConfig.Arrow(0, 2, 1, 1)
+
+		t:assertNear(head, tail, 1e-9, "a seta salta de lugar ao fechar a volta")
+		t:assertNear(headFade, tailFade, 1e-9, "e o brilho salta junto")
 	end)
 
 	t:test("a porta fica no andar do próprio jogador, e não num andar fixo", function()
@@ -324,25 +386,45 @@ return function(t)
 		t:assert(not ElevatorConfig.DoorOpen(open, 3), "o andar de cima viu a porta do outro abrir")
 	end)
 
-	t:test("o visor da porta diz ocupado quando a cabine não está no andar dela", function()
-		-- Sem isso o jogador aperta e nada acontece, sem saber por quê. As respostas têm a mesma
-		-- largura porque a fonte é monoespaçada: texto mais curto incharia com TextScaled ligado.
-		local free = { floor = 2, going = 0, open = false }
-		local moving = { floor = 2, going = 3, open = false }
+	t:test("o visor da porta diz onde a cabine está, e não um traço quando ela está noutro andar", function()
+		-- Antes a porta escrevia "--" com a cabine longe. O traço dizia "ocupado" e mais nada: quem
+		-- esperava no corredor não sabia em que andar ela estava, nem se ela vinha, nem quanto faltava
+		-- — e o motivo de a porta não abrir já é dito pela porta que não abre. MEDIDO no place: com a
+		-- cabine parada em F2, o visor do corredor de F0 tem de escrever 02, ACESO, que é a mesma coisa
+		-- que o visor de dentro escreve no mesmo instante. Os dois visores são a mesma função.
+		local parked = { floor = 3, going = 0, open = false }
+		local text, direction, settled = ElevatorConfig.Screen(parked, 16.000)
 
-		t:assertEqual(ElevatorConfig.DoorText(free, 2), " 01", "cabine parada no andar da porta")
-		t:assertEqual(ElevatorConfig.DoorText(free, 3), ElevatorConfig.ScreenBusy, "de F2 a cabine está longe")
-		t:assertEqual(ElevatorConfig.DoorText(moving, 2), "▲02", "em curso a porta vê para onde ela vai")
-		t:assertEqual(utf8.len(ElevatorConfig.ScreenBusy), utf8.len(" 01"), "ocupado tem outra largura")
+		t:assertEqual(text, "02", "a porta escondeu o andar da cabine")
+		t:assertEqual(direction, 0, "cabine parada não tem seta")
+		t:assert(settled, "parada em F2 saiu apagada, como se fosse andar de passagem")
+
+		t:assert(not ElevatorConfig.Operable(parked, 1), "a porta de F0 passou a obedecer com a cabine em F2")
+		t:assert(not ElevatorConfig.DoorOpen(parked, 1), "e o poço de F0 ficou aberto")
+
+		-- A largura vinha do traço, que tinha as mesmas células de um andar. Sem ele, quem guarda a
+		-- largura é o próprio número: um andar de três dígitos encolheria o texto com TextScaled ligado.
+		for index in ipairs(ElevatorConfig.Floors) do
+			t:assertEqual(utf8.len(ElevatorConfig.Digits(index)), ElevatorConfig.ScreenDigits, "andar de outra largura")
+		end
 	end)
 
-	t:test("o visor de dentro mostra o destino, e o da porta mostra o mesmo em curso", function()
-		local moving = { floor = 3, going = 1, open = false }
-		t:assertEqual(ElevatorConfig.CabinText(moving), "▼00", "descendo de F2 para F0")
-		t:assertEqual(ElevatorConfig.DoorText(moving, 2), "▼00", "a porta do andar do meio vê a mesma descida")
+	t:test("o visor de dentro conta os andares que passam, e não o destino o curso inteiro", function()
+		-- Antes o visor marcava o DESTINO desde o primeiro stud: descer de F2 para F0 mostrava 00 os
+		-- 11.361 s inteiros, e o passageiro não tinha como saber onde estava. MEDIDO: o meio desse
+		-- curso é o plano de F1, em Lift 0, e é lá que o número tem de virar 01.
+		local down = { floor = 3, going = 1, open = false }
+
+		t:assertEqual(ElevatorConfig.Heading(down), -1, "descendo de F2 para F0")
+		t:assertEqual(ElevatorConfig.Screen(down, 16.000), "02", "no começo ainda é F2")
+		t:assertEqual(ElevatorConfig.Screen(down, 0), "01", "no plano de F1 vira F1")
+		t:assertEqual(ElevatorConfig.Screen(down, -15.810), "00", "e só no fim vira F0")
 
 		local parked = { floor = 3, going = 0, open = false }
-		t:assertEqual(ElevatorConfig.CabinText(parked), " 02", "parada em F2")
+		t:assertEqual(ElevatorConfig.Screen(parked, 16.000), "02", "parada em F2")
+		t:assertEqual(ElevatorConfig.Heading(parked), 0, "parada não aponta para lado nenhum")
+		t:assertEqual(ElevatorConfig.ArrowUp, "▲", "a seta de subida")
+		t:assertEqual(ElevatorConfig.ArrowDown, "▼", "a seta de descida")
 	end)
 
 	t:test("curso em andamento não é interrompido, por mais tarde que o pedido chegue", function()
@@ -532,5 +614,180 @@ return function(t)
 
 		model:Destroy()
 		panel:Destroy()
+	end)
+
+	t:test("toda chave de som do elevador existe no catálogo", function()
+		-- As chaves são STRING no ElevatorConfig e tabela no SfxConfig: um erro de digitação passa no
+		-- lint e nos dois builds, e em jogo o `Sfx.Play` avisa UMA vez no console e cala para sempre —
+		-- o elevador anda mudo e ninguém liga o silêncio ao aviso que rolou na primeira viagem.
+		local SfxConfig = t:freshRequire(ReplicatedStorage.Shared.SfxConfig)
+
+		local keys = {
+			ElevatorConfig.StartSound,
+			ElevatorConfig.RunSound,
+			ElevatorConfig.StopSound,
+			ElevatorConfig.RushStopSound,
+			ElevatorConfig.DingSound,
+			ElevatorConfig.FailSound,
+			ElevatorConfig.OpenSound,
+			ElevatorConfig.CloseSound,
+			ElevatorConfig.KeySound,
+		}
+
+		for _, key in ipairs(keys) do
+			t:assert(SfxConfig[key] ~= nil, "o catálogo não tem a chave " .. tostring(key))
+		end
+
+		t:assert(SfxConfig[ElevatorConfig.RunSound].Looped == true, "o leito de movimento não está em laço")
+	end)
+
+	t:test("a partida cala antes de a cabine chegar, em vez de roncar por cima do pib", function()
+		-- MEDIDO por TimeLength com o asset carregado: a gravação da partida tem 9.856 s, e o curso de
+		-- um andar leva 5.714 s. Solta, ela ainda está roncando quando a cabine para — por cima da
+		-- parada E do pib —, e o jogador ouve três sons de mecanismo empilhados na chegada.
+		local SfxConfig = t:freshRequire(ReplicatedStorage.Shared.SfxConfig)
+		local short = ElevatorConfig.Travel(ElevatorConfig.Floors[2].Lift, ElevatorConfig.Floors[3].Lift)
+		local region = SfxConfig[ElevatorConfig.StartSound].Region
+
+		t:assertNear(short, 5.714, 1e-3, "o vão de um andar mudou de duração")
+		t:assert(region ~= nil, "a partida ficou sem Region e vai roncar 9.856 s")
+		t:assert(region.Max < short, "a partida dura mais que o curso mais curto")
+	end)
+
+	t:test("só o curso de ponta a ponta troca o freio", function()
+		-- O leito é um só, e o que muda com o comprimento é a gravação do freio e a antecipação dela.
+		-- MEDIDO a 2.8 studs/s: o vão de um andar leva 5.714 s e não dá pista para a cabine embalar;
+		-- ponta a ponta leva 11.361 s. Trocar de freio em todo curso poria o freio de alta velocidade,
+		-- de 4.178 s, num pulo de 5.714 s — e ele comeria quase todo o leito.
+		local ends = ElevatorConfig.Travel(ElevatorConfig.Floors[1].Lift, ElevatorConfig.Floors[3].Lift)
+
+		t:assertNear(ends, 11.361, 1e-3, "o curso de ponta a ponta mudou de duração")
+		t:assert(ElevatorConfig.Rush(1, 3), "F0 a F2 tinha de embalar")
+		t:assert(ElevatorConfig.Rush(3, 1), "F2 a F0 também, que é o mesmo vão ao contrário")
+		t:assert(not ElevatorConfig.Rush(1, 2), "F0 a F1 embalou num pulo de 5.7 s")
+		t:assert(not ElevatorConfig.Rush(2, 3), "F1 a F2 embalou num pulo de 5.7 s")
+		t:assert(ElevatorConfig.RushStopLead > ElevatorConfig.StopLead, "o freio de alta deixou de ser o longo")
+	end)
+
+	t:test("o freio entra ANTES da chegada, e acaba nela em vez de começar nela", function()
+		-- Antes o freio e o pib entravam no instante em que a cabine parava: o jogador via a cabine
+		-- parar e SÓ ENTÃO ouvia o elevador frear. MEDIDO por TimeLength: a gravação curta leva 1.380 s
+		-- e a longa 4.178 s, e é essa a antecipação de cada uma — o freio acaba na parada.
+		local short = ElevatorConfig.Travel(ElevatorConfig.Floors[2].Lift, ElevatorConfig.Floors[3].Lift)
+		local long = ElevatorConfig.Travel(ElevatorConfig.Floors[1].Lift, ElevatorConfig.Floors[3].Lift)
+
+		local shortAt = ElevatorConfig.StopAt(short, ElevatorConfig.StopLead)
+		local longAt = ElevatorConfig.StopAt(long, ElevatorConfig.RushStopLead)
+
+		t:assert(shortAt < 1, "o freio do curso curto voltou a entrar NA chegada")
+		t:assert(longAt < 1, "o freio do curso longo voltou a entrar NA chegada")
+		t:assertNear(shortAt, 0.7585, 1e-3, "o freio do curso curto saiu do lugar")
+		t:assertNear(longAt, 0.6322, 1e-3, "o freio do curso longo saiu do lugar")
+
+		t:assertNear(short - shortAt * short, 1.380, 1e-3, "o freio curto não acaba na chegada")
+		t:assertNear(long - longAt * long, 4.178, 1e-3, "o freio longo não acaba na chegada")
+
+		-- O leito tem de sobrar: antecipação maior que o curso põe a cabine partindo já freando.
+		t:assertNear(shortAt * short, 4.334, 1e-3, "sobrou pouco leito no curso curto")
+		t:assertNear(longAt * long, 7.183, 1e-3, "sobrou pouco leito no curso longo")
+		t:assert(ElevatorConfig.StopLead < short, "o freio curto engoliu o curso inteiro")
+		t:assert(ElevatorConfig.RushStopLead < long, "o freio longo engoliu o curso inteiro")
+
+		t:assertEqual(ElevatorConfig.StopAt(0.5, 1.380), 0, "curso curto demais tinha de começar freando")
+	end)
+
+	t:test("o leito some por baixo do freio, em vez de ser cortado no quadro em que ele entra", function()
+		-- Antes o leito era destruído no MESMO quadro em que o freio começava: o ronco sumia de uma vez
+		-- e o freio entrava de um silêncio — pior ainda se a gravação do freio tiver silêncio de
+		-- cabeça, que em Edit não dá para medir, porque aí sobra um talho audível no meio do curso.
+		-- MEDIDO: o freio mais curto leva 1.380 s, então o sumiço tem de caber dentro dele; maior que
+		-- isso e quem acaba por último volta a ser o leito, com o talho só mudando de lugar.
+		-- As relações vêm ANTES do pino de valor: pinado primeiro, é ele que estoura em qualquer troca e
+		-- a mensagem some — o vermelho diria "mudou de duração" onde o defeito é o leito durar mais que
+		-- o freio.
+		t:assert(ElevatorConfig.BedFade > 0, "o leito voltou a ser cortado no quadro do freio")
+		t:assert(ElevatorConfig.BedFade < ElevatorConfig.StopLead, "o leito acaba depois do freio curto")
+		t:assert(ElevatorConfig.BedFade < ElevatorConfig.RushStopLead, "o leito acaba depois do freio longo")
+		t:assertNear(ElevatorConfig.BedFade, 0.8, 1e-6, "o sumiço do leito mudou de duração")
+
+		-- E tem de caber antes da chegada, senão o motor ronca com a cabine já parada.
+		local short = ElevatorConfig.Travel(ElevatorConfig.Floors[2].Lift, ElevatorConfig.Floors[3].Lift)
+		local stopAt = ElevatorConfig.StopAt(short, ElevatorConfig.StopLead)
+
+		t:assertNear(stopAt * short + ElevatorConfig.BedFade, 5.134, 1e-3, "o leito saiu do lugar")
+		t:assert(stopAt * short + ElevatorConfig.BedFade < short, "o leito ainda ronca com a cabine parada")
+	end)
+
+	t:test("o tranco da câmera morre em zero, e não fica preso na cabeça do jogador", function()
+		-- `CameraOffset` é escrito a cada quadro enquanto o tranco corre, e o último valor escrito
+		-- FICA. Sem o envelope que o mata, o jogador sai da cabine e atravessa o mapa inteiro com a
+		-- câmera deslocada, sem nada no console dizendo por quê. É o mesmo motivo por que o passo de
+		-- desenho não pode se desligar com tranco correndo: ele congelaria no meio.
+		t:assertNear(ElevatorConfig.ShakeFall(0), 1, 1e-6, "o tranco não começa cheio")
+		t:assertEqual(ElevatorConfig.ShakeFall(1), 0, "o tranco não zera no fim")
+		t:assertEqual(ElevatorConfig.ShakeFall(2), 0, "passado o fim, o tranco voltou a valer")
+
+		-- E tem de ir e VOLTAR: um empurrão só, sem troca de sinal, se lê como teleporte da câmera.
+		-- MEDIDO com 2.5 meias ondas: o sinal vira em 0.2 e em 0.6 do tranco.
+		local crossings = 0
+		local before = ElevatorConfig.ShakeFall(0)
+
+		for tick = 1, 100 do
+			local now = ElevatorConfig.ShakeFall(tick / 100)
+
+			t:assert(math.abs(now) <= 1, "o tranco passou da amplitude pedida")
+
+			if (now < 0) ~= (before < 0) then
+				crossings += 1
+			end
+
+			before = now
+		end
+
+		t:assertEqual(crossings, 2, "o tranco deixou de ir e voltar")
+
+		-- E cada balanço tem de ser MENOR que o anterior. Sem o envelope o cosseno oscila com a mesma
+		-- amplitude do começo ao fim: o tranco vira vibração presa em vez de solavanco que morre, e
+		-- zerar no fim passa a ser um corte e não uma chegada. MEDIDO: o pico da segunda metade é
+		-- 0.354, contra 1 da primeira.
+		local first, second = 0, 0
+
+		for tick = 0, 100 do
+			local size = math.abs(ElevatorConfig.ShakeFall(tick / 100))
+
+			if tick < 50 then
+				first = math.max(first, size)
+			else
+				second = math.max(second, size)
+			end
+		end
+
+		t:assert(second < first / 2, "o tranco virou vibração de amplitude fixa")
+		t:assertNear(first, 1, 1e-3, "o pico do começo mudou")
+		t:assertNear(second, 0.354, 1e-2, "o pico do fim mudou")
+	end)
+
+	t:test("o tranco é quase todo vertical, e nunca sai fraco demais para se notar", function()
+		-- Elevador solavanca no eixo em que ANDA. Tranco de módulo parecido nos três eixos se lê como
+		-- a sala escorregando, não como a cabine batendo. E sem piso de força o sorteio às vezes
+		-- devolve tranco imperceptível, que passa por falha de desenho. MEDIDO no rig do place: o pivô
+		-- de quem está de pé fica 2.937 acima da laje, então 0.32 stud é solavanco — acima de meio
+		-- stud a câmera começa a se ler como solta do corpo.
+		t:assert(ElevatorConfig.ShakeStop > ElevatorConfig.ShakePass, "a chegada tinha de trancar mais que a passagem")
+		t:assert(ElevatorConfig.ShakeStop < 0.5, "o tranco deixou de ser leve")
+		t:assert(ElevatorConfig.ShakePass > 0, "a laje cruzada deixou de trancar")
+
+		for tick = 0, 10 do
+			local roll = tick / 10
+			local axis = ElevatorConfig.ShakeAxis(roll, roll, 1 - roll, roll)
+
+			t:assert(math.abs(axis.Y) >= ElevatorConfig.ShakeFloor, "o tranco saiu fraco demais para se notar")
+			t:assert(math.abs(axis.Y) <= 1, "o tranco vertical passou da amplitude")
+			t:assert(math.abs(axis.X) < math.abs(axis.Y), "o lateral passou o vertical")
+			t:assert(math.abs(axis.Z) < math.abs(axis.Y), "o para-frente passou o vertical")
+		end
+
+		t:assertNear(ElevatorConfig.ShakeSway, 0.35, 1e-6, "a inclinação do tranco mudou")
+		t:assertNear(ElevatorConfig.ShakeFloor, 0.6, 1e-6, "o piso de força mudou")
 	end)
 end
