@@ -31,10 +31,11 @@
 
 local Tests = {}
 
--- Ordem importa só para a leitura do relatório.
--- VAZIA de propósito: a bateria nasce sem histórico. Cada correção nascida de Play vira uma spec
--- aqui, e o nome dela entra nesta lista.
-local SPEC_NAMES = {}
+-- Ordem importa só para a leitura do relatório. Cada correção nascida de Play vira uma spec aqui, e
+-- o nome dela entra nesta lista — spec fora dela não roda, e o runner não tem como saber que existe.
+local SPEC_NAMES = {
+	"OverheadCardSpec",
+}
 
 local function serialize(value)
 	if type(value) == "table" then

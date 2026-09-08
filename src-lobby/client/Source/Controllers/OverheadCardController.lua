@@ -1,5 +1,8 @@
--- Faz o cartão acima da cabeça encarar a câmera, reescrevendo o C0 do weld por frame.
--- SurfaceGui não tem auto-facing. Roda local: a escrita não replica.
+-- Faz o cartão acima da cabeça encarar a câmera, reescrevendo o C0 do weld. SurfaceGui não tem
+-- auto-facing. Roda local: a escrita não replica.
+--
+-- Escrever custa 14x o que custa decidir, então o laço decide antes: quem OverheadCardConfig.NeedsFacing
+-- recusa não paga escrita nenhuma.
 local OverheadCardController = {}
 
 local Players = game:GetService("Players")
@@ -8,7 +11,9 @@ local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("OverheadCardConfig"))
 
-local RADIUS_SQ = Config.FacingRadius * Config.FacingRadius
+-- Depois da câmera do quadro: ligado antes, o cartão encararia a posição do quadro anterior.
+local BIND_NAME = "OverheadCardFacing"
+local BIND_PRIORITY = Enum.RenderPriority.Camera.Value + 1
 
 -- C0 de descanso por weld. Chaves fracas: o weld some no respawn.
 local baseC0 = setmetatable({}, { __mode = "k" })
@@ -24,7 +29,7 @@ local function faceCamera(weld, head, cameraPosition)
 	local c1 = weld.C1
 	local restPosition = (headCF * c1 * base:Inverse()).Position
 
-	if (cameraPosition - restPosition).Magnitude < 1e-3 then
+	if (cameraPosition - restPosition).Magnitude < Config.FacingNearLimit then
 		return
 	end
 
@@ -84,6 +89,23 @@ local function follow(player)
 	end)
 end
 
+local function step()
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return
+	end
+
+	local cameraCF = camera.CFrame
+
+	for player, entry in pairs(tracked) do
+		if entry.weld.Parent == nil or entry.head.Parent == nil then
+			tracked[player] = nil
+		elseif Config.NeedsFacing(cameraCF, entry.handle.CFrame) then
+			faceCamera(entry.weld, entry.head, cameraCF.Position)
+		end
+	end
+end
+
 function OverheadCardController.Start()
 	for _, player in ipairs(Players:GetPlayers()) do
 		follow(player)
@@ -99,25 +121,7 @@ function OverheadCardController.Start()
 		end
 	end)
 
-	RunService.RenderStepped:Connect(function()
-		local camera = workspace.CurrentCamera
-		if not camera then
-			return
-		end
-
-		local cameraPosition = camera.CFrame.Position
-
-		for player, entry in pairs(tracked) do
-			if entry.weld.Parent == nil or entry.head.Parent == nil then
-				tracked[player] = nil
-			else
-				local delta = entry.handle.Position - cameraPosition
-				if delta:Dot(delta) <= RADIUS_SQ then
-					faceCamera(entry.weld, entry.head, cameraPosition)
-				end
-			end
-		end
-	end)
+	RunService:BindToRenderStep(BIND_NAME, BIND_PRIORITY, step)
 end
 
 return OverheadCardController
