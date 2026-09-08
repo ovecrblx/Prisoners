@@ -87,10 +87,11 @@ DoorConfig.OpenHeight = 1
 -- nomeia o bolso é `Pocket` — as folhas se chamam pelo lado de quem olha do corredor, e a geometria
 -- sozinha não sabe qual lado é a esquerda. `Travel` é a fração do curso pleno, o que tiraria a folha
 -- inteira do vão, e é o que deixa a nesga de fora. O prompt fica no botão de chamada e não na folha.
+-- Só a FOLHA mora aqui: a cabine, os andares, o painel e o estado são do ElevatorConfig. O andar da
+-- cabine e o aberto são do servidor; a altura e o andar da porta, de cada cliente.
 DoorConfig.ElevatorPrefix = "Door_Elevator"
 DoorConfig.ElevatorPocket = "Left Root"
 DoorConfig.ElevatorCall = "Call"
-DoorConfig.ElevatorAttribute = "Open"
 DoorConfig.ElevatorTravel = 0.9
 DoorConfig.ElevatorOpenTime = 1.1
 DoorConfig.ElevatorCloseTime = 1.1

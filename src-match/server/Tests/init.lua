@@ -37,6 +37,7 @@ local SPEC_NAMES = {
 	"StorageRigSpec",
 	"CaseFitSpec",
 	"ElevatorSlideSpec",
+	"ElevatorRideSpec",
 	"RigLookSpec",
 }
 

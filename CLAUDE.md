@@ -209,6 +209,18 @@ guarda executável ou só disciplina.
 | o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | as folhas do elevador correm para o lado da folha `ElevatorPocket`, e cada uma tem o seu curso | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | o prompt do elevador mora no botão `Call`, com a âncora virada para o corredor | `ElevatorService.lua` | `ElevatorSlideSpec` |
+| o elevador é UM no mundo: o estado mora em atributos do servidor e o movimento é desenhado por cada cliente — nenhuma CFrame do elevador replica | `ElevatorService.lua` | — |
+| a cabine é COMPARTILHADA e a porta é DE CADA JOGADOR: existe um `Door_Elevator` só, e cada cliente o desenha no andar do jogador local | `ElevatorController.lua` | `ElevatorRideSpec` |
+| a porta só abre com a cabine parada no andar DELA; `Open` é compartilhado mas só vale ali, e fora disso o visor diz ocupado | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| a porta de quem está dentro sobe COLADA na cabine (`DoorLift`); o posto dela (`DoorFloor`) fica no andar de partida até a chegada, porque trocar de posto a teleporta e a fecha de uma vez | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| o curso é interpolado do `StartedAt` do relógio do servidor, não de um cronômetro que começa quando o aviso chega | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| os vãos entre andares NÃO são iguais: F0 −15.810, F1 0, F2 +16.000 studs da pose autorada | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| a folha fechada é o que tapa um poço de 16 studs, e ela é publicada com `CanCollide = false` | `ElevatorController.lua` | — |
+| passageiro é quem a caixa da cabine aceita **e** cujo chão é a laje — a caixa sozinha aceita o vão da porta | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| quem viaja é decidido no primeiro quadro em que a cabine ANDA — não quando o andar é apertado —, e cada cliente move só o próprio personagem | `ElevatorController.lua` | — |
+| curso em andamento não é interrompido nem enfileirado, e o próximo espera `MoveCooldown`; a porta espera `DoorCooldown` depois de FECHAR | `ElevatorConfig.lua` | `ElevatorRideSpec` |
+| o fechamento e o curso saem num aviso só: `StartedAt` é publicado no futuro, já com a espera da folha embutida | `ElevatorService.lua` | — |
+| a laje do servidor nunca sai da pose autorada: a caixa do ocupante é levantada por `InsideAt` | `ElevatorService.lua` | `ElevatorRideSpec` |
 | o escuro dos dois places vem de `GeographicLatitude = 283`, não de `ClockTime = 12` | `Lighting` de cada place | — |
 | o corpo do Match é o rig DENTRO do Package `127188560784122`, em `ServerStorage.Rigs.Character` — não uma cópia | `RigLibrary.lua` | `RigLookSpec` |
 | NPC com rig custom mora em `ServerStorage.Rigs.Npc.<Classe>`, é autorado completo e não passa por `Dress` | `RigLibrary.lua` | `RigLookSpec` |
