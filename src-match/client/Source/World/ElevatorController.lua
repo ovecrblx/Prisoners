@@ -63,6 +63,7 @@ local shakeAxis = Vector3.zero
 local shakeSize = 0
 local shakeRider = false
 local passFloor = 0
+local startArmed = false
 local stopShook = false
 
 -- Espelho local dos resfriamentos do servidor, que ele guarda em `os.clock()` e não publica. Servem
@@ -404,6 +405,7 @@ end
 -- diz o espaço; o exemplo dela é um balanço de caminhada em Y, que é o eixo que importa aqui.
 local function clearShake()
 	shakeStart = 0
+	startArmed = false
 
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
@@ -453,6 +455,8 @@ end
 -- Quando o tranco entra. A laje cruzada sai do MESMO `PassedAt` que escreve o número do visor, então
 -- o solavanco cai no quadro em que o número troca. A do DESTINO não conta: ela é a chegada, e a
 -- chegada já tem o tranco dela, maior — contadas as duas, o jogador leva dois trancos colados.
+-- A partida tranca no PRIMEIRO quadro em que a cabine anda, e só para quem viu o quadro anterior
+-- parado: quem chegou com o curso em andamento levaria um tranco de partida no meio da viagem.
 local function shakeRide(raw)
 	if state.going == 0 then
 		return
@@ -461,8 +465,14 @@ local function shakeRide(raw)
 	if raw <= 0 then
 		shakeRider = riding
 		passFloor = state.floor
+		startArmed = true
 		stopShook = false
 		return
+	end
+
+	if startArmed then
+		startArmed = false
+		startShake(ElevatorConfig.ShakeStart)
 	end
 
 	if raw >= 1 then

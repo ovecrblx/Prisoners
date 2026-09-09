@@ -767,6 +767,26 @@ return function(t)
 		t:assertNear(second, 0.354, 1e-2, "o pico do fim mudou")
 	end)
 
+
+	t:test("a partida tranca, e tranca mais que cruzar uma laje", function()
+		-- O DEFEITO: o tranco tinha dois gatilhos, a laje cruzada e a parada, e a PARTIDA não trancava.
+		-- A cabine saía do lugar sem nada acusar na câmera, e o primeiro solavanco da viagem só vinha
+		-- na primeira laje — que num curso de um andar é a própria chegada.
+		-- As três forças são escolhidas, não medidas, mas a ORDEM entre elas não é gosto: partir e
+		-- parar são as pontas do curso, cruzar uma laje é passagem. Invertida, a viagem inteira fica
+		-- com o solavanco mais forte no meio.
+		t:assert(ElevatorConfig.ShakeStart > 0, "a partida deixou de trancar")
+		t:assert(
+			ElevatorConfig.ShakeStart > ElevatorConfig.ShakePass,
+			"partir tem de trancar mais que cruzar uma laje"
+		)
+		t:assert(
+			ElevatorConfig.ShakeStart <= ElevatorConfig.ShakeStop,
+			"o freio é o mais duro dos dois: cabine embala devagar e para firme"
+		)
+		t:assert(ElevatorConfig.ShakeStart < 0.5, "o tranco de partida deixou de ser leve")
+	end)
+
 	t:test("o tranco é quase todo vertical, e nunca sai fraco demais para se notar", function()
 		-- Elevador solavanca no eixo em que ANDA. Tranco de módulo parecido nos três eixos se lê como
 		-- a sala escorregando, não como a cabine batendo. E sem piso de força o sorteio às vezes

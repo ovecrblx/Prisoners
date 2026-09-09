@@ -230,6 +230,7 @@ guarda executável ou só disciplina.
 | o tranco da câmera vai em `Humanoid.CameraOffset` e nunca na CFrame da câmera: o passo do elevador corre ANTES do passo da câmera, e uma CFrame escrita ali é sobrescrita no mesmo quadro | `ElevatorController.lua` | — |
 | todo tranco ZERA o offset ao morrer, e o passo de desenho não se desliga com tranco correndo: congelado no meio, o jogador atravessa o mapa com a câmera deslocada e nada avisa | `ElevatorController.lua` | `ElevatorRideSpec` |
 | a laje que dispara o tranco sai do MESMO `PassedAt` que escreve o número do visor, e a do DESTINO não conta — ela é a chegada, que já tem o tranco dela | `ElevatorController.lua` | — |
+| a PARTIDA tranca no primeiro quadro em que a cabine anda, e só para quem viu o quadro anterior parado: quem chega com o curso em andamento levaria um tranco de partida no meio da viagem | `ElevatorController.lua` | — |
 | a porta de quem está dentro sobe COLADA na cabine (`DoorLift`); o posto dela (`DoorFloor`) fica no andar de partida até a chegada, porque trocar de posto a teleporta e a fecha de uma vez | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | o curso é interpolado do `StartedAt` do relógio do servidor, não de um cronômetro que começa quando o aviso chega | `ElevatorConfig.lua` | `ElevatorRideSpec` |
 | o relógio do servidor é lido UMA vez por curso e ancorado no relógio local (`Anchor`): lido a cada quadro, cada correção da sincronia entra na altura da cabine e vira tremor | `ElevatorController.lua` | `ElevatorRideSpec` |

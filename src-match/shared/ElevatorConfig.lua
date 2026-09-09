@@ -114,11 +114,14 @@ ElevatorConfig.RushStopLead = 4.178
 -- quem acaba por último é o leito e o talho só muda de lugar.
 ElevatorConfig.BedFade = 0.8
 
--- Tranco da câmera de quem VIAJA: um a cada laje que a cabine cruza no meio do curso, e outro, maior,
--- na parada. `ShakeTime` é quanto ele dura, `ShakeWaves` quantas meias ondas ele dá enquanto morre,
--- `ShakeSway` o quanto ele sai do vertical, e `ShakeFloor` o piso do sorteio de força, para dois
--- trancos seguidos não saírem idênticos nem um deles sair imperceptível.
+-- Tranco da câmera de quem VIAJA: um na PARTIDA, um a cada laje que a cabine cruza no meio do curso,
+-- e outro, maior, na parada. `ShakeTime` é quanto ele dura, `ShakeWaves` quantas meias ondas ele dá
+-- enquanto morre, `ShakeSway` o quanto ele sai do vertical, e `ShakeFloor` o piso do sorteio de
+-- força, para dois trancos seguidos não saírem idênticos nem um deles sair imperceptível.
+-- As três forças são ESCOLHIDAS e não medidas: partir e parar são as duas pontas do curso e trancam
+-- mais que cruzar uma laje, e o freio é o mais duro dos dois — cabine embala devagar e para firme.
 ElevatorConfig.ShakePass = 0.18
+ElevatorConfig.ShakeStart = 0.26
 ElevatorConfig.ShakeStop = 0.32
 ElevatorConfig.ShakeTime = 0.45
 ElevatorConfig.ShakeWaves = 2.5
