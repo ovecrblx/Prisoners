@@ -1,4 +1,5 @@
--- Ventiladores da decoração: a hélice `Rot` de cada Model `Fan` gira, só neste cliente. É enfeite,
+-- Ventiladores da decoração: a hélice `Rot` de cada Model `Fan` gira, só neste cliente. O cenário
+-- clona o ventilador, então o nome vem numerado — `Fan_1`, `Fan_2` — e todos valem. É enfeite,
 -- então nada replica — escrita de CFrame em peça do servidor não subiria de todo jeito. Uma passada
 -- no boot e o resto por evento: com streaming a pasta chega vazia, e varrer em loop atrás dela seria
 -- gastar quadro para saber o que a engine já avisa.
@@ -9,11 +10,20 @@ local Sfx = require(script.Parent.Parent:WaitForChild("Lib"):WaitForChild("Sfx")
 
 local FanController = {}
 
--- Onde varrer, o Model que carrega a hélice, o nome dela, e o do laço de ambiente pendurado nela.
+-- Onde varrer, o Model que carrega a hélice, o nome dela, e o do laço de ambiente pendurado nela. O
+-- ventilador é clonado no cenário, então o nome ganha sufixo: vale `Fan` puro e vale `Fan_<algo>`.
 local FOLDER = { "Siland_Home", "Decoration" }
 local FAN_NAME = "fan"
 local ROTOR_NAME = "Rot"
 local AMBIENT_NAME = "FanAmbient"
+
+-- Exigir o `_` é o que separa o clone do vizinho: sem ele, `Fantasma` entraria na varredura e o laço
+-- de ambiente nasceria pendurado num NPC.
+function FanController.IsFan(name)
+	local low = string.lower(name)
+
+	return low == FAN_NAME or string.sub(low, 1, #FAN_NAME + 1) == FAN_NAME .. "_"
+end
 
 -- graus/s da hélice, e o eixo do giro no espaço da própria peça.
 local SPIN_SPEED = 320
@@ -49,7 +59,7 @@ end
 -- torno do centro faria a hélice bambear em vez de rodar no eixo.
 local function register(item)
 	local model = item.Parent
-	if not (item:IsA("BasePart") and model and string.lower(model.Name) == FAN_NAME) then
+	if not (item:IsA("BasePart") and model and FanController.IsFan(model.Name)) then
 		return
 	end
 

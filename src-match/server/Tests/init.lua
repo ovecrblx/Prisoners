@@ -39,6 +39,7 @@ local SPEC_NAMES = {
 	"ElevatorSlideSpec",
 	"ElevatorRideSpec",
 	"RigLookSpec",
+	"FanSpinSpec",
 }
 
 local function serialize(value)

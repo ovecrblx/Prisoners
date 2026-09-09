@@ -209,6 +209,7 @@ guarda executável ou só disciplina.
 | a fila em repouso NÃO se mexe: a sobra acima da borda é autorada e fica onde o servidor a semeou; quem sobe e desce é só a pasta destacada | `CaseFolderController.lua` | — |
 | a gaveta é resolvida NA HORA DO USO, nunca no que a varredura guardou, e as escutas nascem do Model e não da caixa: `StreamingEnabled` é true, a peça chega depois do Model, e uma escuta por armário que reage a PEÇA é o que fecha o vão — reagir só a Model deixa a gaveta sem caixa, sem dono e sem fila, em silêncio | `CaseFolderController.lua` | — |
 | a pasta é posicionada ANTES de ser parenteada: parenteada primeiro, ela pisca um quadro na pose do molde antes de a CFrame chegar | `CaseFolderService.lua` | — |
+| o ventilador do cenário é clonado e numerado: vale `Fan` puro e vale `Fan_<sufixo>`, e exigir o `_` é o que impede `Fantasma` e `Air_1` de entrarem na varredura | `FanController.lua` | `FanSpinSpec` |
 | a pose de repouso de cada pasta é CALCULADA com a mesma conta do servidor (`PoseAt` sobre o molde), nunca lida do pivô vivo: lida, ela guarda o que a pasta estivesse fazendo no instante — já destacada, ou a gaveta já corrida — e o erro é cumulativo | `CaseFolderController.lua` | `CaseFitSpec` |
 | dica de tecla de cena que dura usa `KeyHint.Pin`, não `Show` | `KeyHint.lua` | — |
 | o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
