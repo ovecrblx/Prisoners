@@ -205,10 +205,11 @@ guarda executável ou só disciplina.
 | `Open` da gaveta acompanha o `User`: sem dono, fechada | `StorageService.lua` | — |
 | sair da gaveta é gatilho do cliente, mas quem fecha é o servidor | `StorageService.lua` | — |
 | a câmera da gaveta fica do lado da boca e acima da borda | `CaseConfig.lua` | `CaseFitSpec` |
-| a fila de pastas só se projeta acima da borda com a gaveta FORA: guardada ela some dentro da caixa, sobe depois de o curso terminar, e desce antes de o móvel a engolir | `CaseConfig.lua` | `CaseFitSpec` |
-| o quanto a fila afunda sai do molde e da caixa (`StowDepth`), nunca de constante: molde reautorado muda a sobra acima da borda junto | `CaseConfig.lua` | `CaseFitSpec` |
-| o recolhimento vale em TODA gaveta da lista, não só na deste jogador: a gaveta do outro é vista daqui, e a pasta é mais alta que a caixa | `CaseFolderController.lua` | — |
-| toda pose de pasta é escrita num lugar só, e sai da pose de repouso lida NO MOMENTO em que a pasta aparece: relida depois do recolhimento ela guardaria o afundamento junto, e a fila desceria de novo a cada varredura | `CaseFolderController.lua` | — |
+| o levante da pasta destacada espera o curso INTEIRO da gaveta (`LiftDelay`), e descer não espera nada: ele vale 0,574 stud contra 0,167 que a pasta já sobra acima da borda, e subindo com a gaveta ainda dentro do móvel a pasta atravessa a boca dele | `CaseConfig.lua` | `CaseFitSpec` |
+| a fila em repouso NÃO se mexe: a sobra acima da borda é autorada e fica onde o servidor a semeou; quem sobe e desce é só a pasta destacada | `CaseFolderController.lua` | — |
+| a gaveta é resolvida NA HORA DO USO, nunca no que a varredura guardou, e as escutas nascem do Model e não da caixa: `StreamingEnabled` é true, a peça chega depois do Model, e uma escuta por armário que reage a PEÇA é o que fecha o vão — reagir só a Model deixa a gaveta sem caixa, sem dono e sem fila, em silêncio | `CaseFolderController.lua` | — |
+| a pasta é posicionada ANTES de ser parenteada: parenteada primeiro, ela pisca um quadro na pose do molde antes de a CFrame chegar | `CaseFolderService.lua` | — |
+| a pose de repouso de cada pasta é CALCULADA com a mesma conta do servidor (`PoseAt` sobre o molde), nunca lida do pivô vivo: lida, ela guarda o que a pasta estivesse fazendo no instante — já destacada, ou a gaveta já corrida — e o erro é cumulativo | `CaseFolderController.lua` | `CaseFitSpec` |
 | dica de tecla de cena que dura usa `KeyHint.Pin`, não `Show` | `KeyHint.lua` | — |
 | o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | as folhas do elevador correm para o lado da folha `ElevatorPocket`, e cada uma tem o seu curso | `DoorConfig.lua` | `ElevatorSlideSpec` |

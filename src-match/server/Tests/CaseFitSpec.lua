@@ -177,47 +177,48 @@ return function(t)
 		t:assertEqual(stampText, "TOP SECRET", "o carimbo da capa não pode ser tocado")
 	end)
 
-	t:test("com a gaveta guardada a fila some dentro da caixa", function()
-		-- O DEFEITO: a pose de repouso encosta a BASE da pasta no piso, e a pasta é mais alta que a
-		-- caixa — então a sobra fica acima da borda SEMPRE, gaveta fechada inclusive, e atravessa o
-		-- móvel. MEDIDO NO PLACE: caixa 0.9808 de altura, pasta 1.148, sobra 0.1667.
-		local center, size = placed(1, CaseConfig.PerDrawer)
-		local sink = CaseConfig.StowDepth(DRAWER.Y, metrics.size)
-		local top = center.Position.Y + size.Y / 2 - sink
-		local rim = DRAWER.Y / 2
+	t:test("a pasta destacada não sobe enquanto a gaveta ainda corre", function()
+		-- O DEFEITO: o levante começava no mesmo gesto que abre a gaveta. MEDIDO: ele vale 50% da
+		-- altura da pasta, 0.574 stud, contra 0.1667 que ela já sobra acima da borda — mais que o
+		-- triplo. Subindo com a gaveta ainda dentro do móvel, a pasta atravessa a boca dele, e o
+		-- estrago é só visual, então nada acusa. Os dois relógios partem do MESMO gesto, então a
+		-- espera tem que cobrir o curso inteiro da gaveta.
+		local lift = metrics.size.Y * CaseConfig.Lift
+		local over = metrics.size.Y - DRAWER.Y
 
-		t:assert(top <= rim, "recolhida, a fila ainda sobra " .. string.format("%.4f", top - rim) .. " acima da borda")
-		t:assert(top > rim - size.Y / 2, "a fila afundou tanto que sumiu pelo fundo da gaveta")
-		t:assertNear(sink, 0.1667 + CaseConfig.StowMargin, 1e-3, "o afundamento é a sobra medida mais a folga")
-	end)
-
-	t:test("a fila não se projeta enquanto a gaveta ainda corre", function()
-		-- O DEFEITO: subir junto com o curso põe a sobra da pasta dentro do móvel enquanto a gaveta
-		-- sai — ela atravessa a frente antes de existir boca por onde sair. Os dois relógios partem
-		-- do MESMO aviso, então a espera da fila tem que cobrir o curso inteiro da gaveta.
+		t:assert(lift > over * 2, "o levante deixou de ser maior que a sobra; a espera perdeu o motivo")
 		t:assertEqual(
-			CaseConfig.RiseProgress(StorageConfig.OpenTime - 1e-3, true),
+			CaseConfig.LiftProgress(StorageConfig.OpenTime - 1e-3, CaseConfig.LiftDelay),
 			0,
-			"a fila começou a subir com a gaveta ainda correndo"
+			"a pasta começou a subir com a gaveta ainda correndo"
 		)
 		t:assert(
-			CaseConfig.RiseProgress(StorageConfig.OpenTime + CaseConfig.RiseTime, true) >= 1,
-			"a fila nunca termina de subir"
+			CaseConfig.LiftProgress(StorageConfig.OpenTime + CaseConfig.LiftTime + 1e-3, CaseConfig.LiftDelay) >= 1,
+			"a pasta nunca termina de subir"
 		)
 	end)
 
-	t:test("a fila se recolhe antes de a gaveta bater no batente", function()
-		-- O DEFEITO: recolher no mesmo tempo do fechamento deixa a pasta ainda para fora no quadro em
-		-- que o móvel a engole. MEDIDO: 0.65 s de fechamento contra 0.3 s de recolhimento.
-		t:assert(CaseConfig.SinkTime < StorageConfig.CloseTime, "o recolhimento acaba depois do fechamento")
+	t:test("a pasta destacada desce antes de a gaveta bater no batente", function()
+		-- O DEFEITO oposto: descer no tempo do fechamento deixa a pasta ainda erguida no quadro em que
+		-- o móvel a engole. MEDIDO: 0.65 s de fechamento contra 0.18 s de levante. Descer não espera
+		-- nada — a espera é só para subir.
+		t:assert(CaseConfig.LiftTime < StorageConfig.CloseTime, "o levante desce depois do fechamento")
 		t:assertEqual(
-			CaseConfig.RiseProgress(StorageConfig.CloseTime, false),
+			CaseConfig.LiftProgress(StorageConfig.CloseTime, 0),
 			1,
-			"a fila ainda estava descendo quando a gaveta encostou"
+			"a pasta ainda estava descendo quando a gaveta encostou"
 		)
 		t:assert(
-			StorageConfig.CloseTime - CaseConfig.SinkTime >= 0.2,
-			"a folga entre o fim do recolhimento e o batente ficou curta demais"
+			StorageConfig.CloseTime - CaseConfig.LiftTime >= 0.2,
+			"a folga entre o fim da descida e o batente ficou curta demais"
 		)
 	end)
+
+	t:test("quem já está com a gaveta aberta troca de pasta sem espera", function()
+		-- A espera é do gesto que ABRE a gaveta, não de cada tecla: cobrada em toda troca, percorrer a
+		-- fila com Q e E ficaria com quase um segundo de atraso por pasta.
+		t:assert(CaseConfig.LiftProgress(0, 0) == 0, "a troca tem que começar do chão")
+		t:assert(CaseConfig.LiftProgress(CaseConfig.LiftTime, 0) >= 1, "a troca leva só o LiftTime")
+	end)
+
 end

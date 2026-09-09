@@ -59,25 +59,17 @@ CaseConfig.OutlineTransparency = 0
 CaseConfig.FillColor = Color3.fromRGB(255, 255, 255)
 CaseConfig.OutlineColor = Color3.fromRGB(255, 255, 255)
 
--- Fração da ALTURA da pasta que ela sobe ao ser destacada: 50% de 1,148 = 0,574 stud. Sobe no eixo
--- do mundo, não no da gaveta — pasta destacada sai da fila para cima, e a gaveta é nivelada.
+-- Levante da pasta destacada. Fração da ALTURA dela: 50% de 1,148 = 0,574 stud. Sobe no eixo do
+-- MUNDO, não no da gaveta — pasta destacada sai da fila para cima, e a gaveta é nivelada.
+-- `LiftDelay` é a espera antes de subir, e é o curso INTEIRO da gaveta: 0,574 é mais que o triplo do
+-- que a pasta já sobra acima da borda, então levantar com a gaveta ainda correndo passa a pasta por
+-- dentro da boca do móvel. Descer não espera nada, e `LiftTime` tem que caber no fechamento. Os dois
+-- se comparam com `StorageConfig` na bateria.
 CaseConfig.Lift = 0.5
+CaseConfig.LiftDelay = 0.8
 CaseConfig.LiftTime = 0.18
 CaseConfig.LiftStyle = Enum.EasingStyle.Quad
 CaseConfig.LiftDirection = Enum.EasingDirection.Out
-
--- Recolhimento da fila dentro da caixa. A pasta é mais alta que a gaveta e sobra acima da borda: é o
--- que a deixa visível de cima, e é o que não pode aparecer com a gaveta guardada. `RiseDelay` espera
--- o curso da gaveta terminar, e `SinkTime` tem que caber DENTRO do fechamento, senão a fila ainda
--- está subindo quando o móvel a engole. Os dois se comparam com `StorageConfig` na bateria.
--- `StowMargin` são os studs de folga abaixo da borda: rente é rente demais, e a sobra reaparece no
--- primeiro quadro de arredondamento.
-CaseConfig.RiseDelay = 0.8
-CaseConfig.RiseTime = 0.3
-CaseConfig.SinkTime = 0.3
-CaseConfig.StowMargin = 0.02
-CaseConfig.RiseStyle = Enum.EasingStyle.Quad
-CaseConfig.RiseDirection = Enum.EasingDirection.Out
 
 -- Teclas da fila, e o texto que a dica mostra ao lado delas. A ordem aqui é a ordem das plaquinhas
 -- no Frame_Info.
@@ -178,27 +170,11 @@ end
 
 -- Vista da gaveta no MUNDO, tirada da caixa: olho e alvo saem do local dela, então o enquadramento
 -- vira junto com o armário e acompanha a gaveta enquanto ela corre.
--- Altura que o volume ocupa depois de girado: é o que a caixa tem que engolir.
-function CaseConfig.StandingHeight(size)
-	return CaseConfig.Extent(CaseConfig.Rotation(), size).Y * 2
-end
-
--- Studs que a fila afunda para sumir dentro da caixa: a sobra da pasta acima da borda, mais a folga.
--- Sai do molde e da gaveta, nunca de constante — molde reautorado muda a sobra junto.
-function CaseConfig.StowDepth(height, size)
-	local over = CaseConfig.Clearance + CaseConfig.StandingHeight(size) - height
-
-	return if over > 0 then over + CaseConfig.StowMargin else 0
-end
-
--- Andamento do recolhimento, de 0 a 1, `t` segundos depois do aviso da gaveta. Subindo, espera o
--- curso inteiro antes de começar; descendo, começa no mesmo quadro para acabar antes do batente.
-function CaseConfig.RiseProgress(t, open)
-	if open then
-		return math.clamp((t - CaseConfig.RiseDelay) / CaseConfig.RiseTime, 0, 1)
-	end
-
-	return math.clamp(t / CaseConfig.SinkTime, 0, 1)
+-- Andamento do levante, de 0 a 1, `t` segundos depois do gesto, com `wait` segundos de espera antes
+-- de começar. Quem acabou de abrir a gaveta espera o curso inteiro dela; quem já está com ela aberta
+-- não espera nada, e descer nunca espera.
+function CaseConfig.LiftProgress(t, wait)
+	return math.clamp((t - wait) / CaseConfig.LiftTime, 0, 1)
 end
 
 function CaseConfig.View(box)

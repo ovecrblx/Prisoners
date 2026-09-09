@@ -82,10 +82,12 @@ function CaseFolderService.Start()
 
 		if rig then
 			for slot = 1, count do
+				-- Pose ANTES do parent: o cliente lê a pose de repouso da pasta no quadro em que ela aparece,
+				-- e parenteada primeiro ela pode aparecer ainda na pose do molde.
 				local clone = template:Clone()
 				dress(clone, cases[slot], slot)
-				clone.Parent = model
 				clone:PivotTo(rig.box.CFrame * CaseConfig.PoseAt(rig, slot, count, metrics))
+				clone.Parent = model
 			end
 			return
 		end
