@@ -200,6 +200,8 @@ guarda executável ou só disciplina.
 | número que entra no perfil passa por `isSafeNumber` | `PlayerData.lua` | — |
 | `TeleportData` chega `Trusted = false` e é checado antes de conceder | `MatchBootstrap.lua` | — |
 | prompt do cenário é `Style = Custom`; quem desenha é o cliente | `PromptDisplay.lua` | — |
+| quem está NA LINHA não vê os outros jogadores: o corpo alheio, o que ele veste e o que ele segura somem da IMAGEM deste cliente e nunca da simulação — `LocalTransparencyModifier` na peça, no adesivo e no efeito, `Enabled` na GUI presa no corpo, que MEDIDO não aceita a primeira | `PhoneConfig.lua` | `PhoneSpec` |
+| o que chega no meio da chamada entra velado junto: acessório vestido, ferramenta sacada e jogador que renasce passam pela mesma escuta, senão aparecem por cima da vista | `PhoneController.lua` | — |
 | `Packages/` fica fora de `Source/` | os dois `Main.server.lua` | — |
 | gaveta é de um jogador por vez, e quem escreve o dono é o servidor | `StorageService.lua` | — |
 | `Open` da gaveta acompanha o `User`: sem dono, fechada | `StorageService.lua` | — |
@@ -209,8 +211,8 @@ guarda executável ou só disciplina.
 | a fila em repouso NÃO se mexe: a sobra acima da borda é autorada e fica onde o servidor a semeou; quem sobe e desce é só a pasta destacada | `CaseFolderController.lua` | — |
 | a gaveta é resolvida NA HORA DO USO, nunca no que a varredura guardou, e as escutas nascem do Model e não da caixa: `StreamingEnabled` é true, a peça chega depois do Model, e uma escuta por armário que reage a PEÇA é o que fecha o vão — reagir só a Model deixa a gaveta sem caixa, sem dono e sem fila, em silêncio | `CaseFolderController.lua` | — |
 | a pasta é posicionada ANTES de ser parenteada: parenteada primeiro, ela pisca um quadro na pose do molde antes de a CFrame chegar | `CaseFolderService.lua` | — |
-| o ventilador do cenário é clonado e numerado: vale `Fan` puro e vale `Fan_<sufixo>`, e exigir o `_` é o que impede `Fantasma` e `Air_1` de entrarem na varredura | `FanController.lua` | `FanSpinSpec` |
 | a pose de repouso de cada pasta é CALCULADA com a mesma conta do servidor (`PoseAt` sobre o molde), nunca lida do pivô vivo: lida, ela guarda o que a pasta estivesse fazendo no instante — já destacada, ou a gaveta já corrida — e o erro é cumulativo | `CaseFolderController.lua` | `CaseFitSpec` |
+| o ventilador do cenário é clonado e numerado: vale `Fan` puro e vale `Fan_<sufixo>`, e exigir o `_` é o que impede `Fantasma` e `Air_1` de entrarem na varredura | `FanController.lua` | `FanSpinSpec` |
 | dica de tecla de cena que dura usa `KeyHint.Pin`, não `Show` | `KeyHint.lua` | — |
 | o elevador não é porta de dobradiça: quem separa as três famílias é `DoorConfig.Kind` | `DoorConfig.lua` | `ElevatorSlideSpec` |
 | as folhas do elevador correm para o lado da folha `ElevatorPocket`, e cada uma tem o seu curso | `DoorConfig.lua` | `ElevatorSlideSpec` |

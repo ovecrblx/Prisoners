@@ -102,6 +102,82 @@ local function veilHead(hidden)
 	end
 end
 
+-- Os OUTROS jogadores somem da tela de quem está na linha, com o que estiverem vestindo e segurando:
+-- a vista é fixa em cima do teclado e quem passar entre a câmera e o aparelho tapa o visor. Só nesta
+-- máquina — `LocalTransparencyModifier` e `Enabled` são render local, e nada disso sobe. O corpo
+-- continua no mundo: some da imagem, não da simulação, senão o dono dele perde o próprio chão.
+-- O que chega DEPOIS entra junto, e é por isso que há escuta: acessório vestido, ferramenta sacada e
+-- jogador que renasce no meio da chamada apareceriam por cima da vista.
+local veiled = {}
+local veilLinks = {}
+
+local function veilItem(item)
+	if veiled[item] ~= nil then
+		return
+	end
+
+	local how = PhoneConfig.Veil(item)
+	if how == "gui" then
+		veiled[item] = item.Enabled
+		item.Enabled = false
+	elseif how == "fade" then
+		veiled[item] = item.LocalTransparencyModifier
+		item.LocalTransparencyModifier = 1
+	end
+end
+
+local function veilBody(character)
+	for _, item in ipairs(character:GetDescendants()) do
+		veilItem(item)
+	end
+
+	table.insert(veilLinks, character.DescendantAdded:Connect(veilItem))
+end
+
+local function veilPlayer(other)
+	if other == player then
+		return
+	end
+
+	if other.Character then
+		veilBody(other.Character)
+	end
+
+	table.insert(veilLinks, other.CharacterAdded:Connect(veilBody))
+end
+
+local function veilOthers(hidden)
+	if not hidden then
+		for _, link in ipairs(veilLinks) do
+			link:Disconnect()
+		end
+		table.clear(veilLinks)
+
+		-- Booleano é GUI, número é render: a porta de volta é a mesma da ida.
+		for item, previous in pairs(veiled) do
+			if item.Parent then
+				if type(previous) == "boolean" then
+					item.Enabled = previous
+				else
+					item.LocalTransparencyModifier = previous
+				end
+			end
+		end
+		table.clear(veiled)
+		return
+	end
+
+	if next(veiled) ~= nil or #veilLinks > 0 then
+		return
+	end
+
+	for _, other in ipairs(Players:GetPlayers()) do
+		veilPlayer(other)
+	end
+
+	table.insert(veilLinks, Players.PlayerAdded:Connect(veilPlayer))
+end
+
 local function stop()
 	token += 1
 	wide = false
@@ -133,6 +209,7 @@ local function stop()
 		mine = false
 		ItemHud.Block("Phone", false)
 		veilHead(false)
+		veilOthers(false)
 		PhoneDial.Close()
 		player.CameraMode = cameraMode
 
@@ -260,6 +337,7 @@ local function begin(userId, loud)
 
 	mine = true
 	veilHead(true)
+	veilOthers(true)
 	-- Na linha o HUD sai da tela: o fone toma o rosto, o teclado toma o ponteiro, e item nenhum se
 	-- usa com o aparelho na mão.
 	ItemHud.Block("Phone", true)

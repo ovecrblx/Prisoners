@@ -31,6 +31,15 @@ PhoneConfig.BaseName = "Body"
 PhoneConfig.HandsetName = "Head"
 PhoneConfig.FacePartName = "Head" -- parte do corpo que serve de referência
 
+-- O que some da tela de quem está NA LINHA, e por qual porta. A vista é fixa em cima do teclado, e
+-- quem passar entre a câmera e o aparelho tapa o visor. MEDIDO no runtime: BasePart, Decal, Texture,
+-- Beam, ParticleEmitter e Trail aceitam `LocalTransparencyModifier`; SurfaceGui, BillboardGui e
+-- Highlight NÃO — e é justamente a GUI presa no corpo que tapa a vista, então ela sai pelo `Enabled`.
+-- A página do `LocalTransparencyModifier` não lista classe nenhuma e a doc marca a propriedade como
+-- Hidden; ela é a escolha aqui mesmo assim, porque a `Transparency` de um corpo alheio é do servidor.
+PhoneConfig.VeilFade = { "BasePart", "Decal", "Texture", "Beam", "ParticleEmitter", "Trail" }
+PhoneConfig.VeilHide = { "SurfaceGui", "BillboardGui", "Highlight" }
+
 -- Teclado e visor. Cada tecla do teclado é uma peça cujo NOME é o rótulo dela, com a própria
 -- SurfaceGui e o TextButton autorados no place; o visor é uma peça com um só TextButton.
 PhoneConfig.PadName = "Control"
@@ -168,6 +177,23 @@ function PhoneConfig.Child(parent, name)
 	for _, child in ipairs(parent:GetChildren()) do
 		if string.lower(child.Name) == wanted then
 			return child
+		end
+	end
+
+	return nil
+end
+
+-- Por qual porta esta instância some da tela: "fade" apaga no render local, "gui" desliga. `nil` fica.
+function PhoneConfig.Veil(instance)
+	for _, class in ipairs(PhoneConfig.VeilHide) do
+		if instance:IsA(class) then
+			return "gui"
+		end
+	end
+
+	for _, class in ipairs(PhoneConfig.VeilFade) do
+		if instance:IsA(class) then
+			return "fade"
 		end
 	end
 
